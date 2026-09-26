@@ -1,0 +1,11 @@
+{
+  "name": "@rolevana/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {"dev":"next dev","build":"next build --webpack","start":"next start","lint":"eslint . --max-warnings=0","typecheck":"tsc --noEmit"},
+  "dependencies": {
+    "@rolevana/ai":"workspace:*","@rolevana/applications":"workspace:*","@rolevana/config":"workspace:*","@rolevana/database":"workspace:*","@rolevana/domain":"workspace:*","@rolevana/job-sources":"workspace:*","@rolevana/ui":"workspace:*",
+    "@supabase/ssr":"latest","@supabase/supabase-js":"latest","lucide-react":"latest","mammoth":"1.10.0","next":"latest","pdf-parse":"1.1.1","react":"latest","react-dom":"latest","zod":"4.1.11"
+  },
+  "devDependencies": {"@types/node":"latest","@types/pdf-parse":"1.1.5","@types/react":"latest","@types/react-dom":"latest","eslint":"9.39.1","eslint-config-next":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest","typescript":"5.9.3"}
+}

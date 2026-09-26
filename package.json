@@ -1,0 +1,22 @@
+{
+  "name": "rolevana",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "pnpm --filter @rolevana/web dev",
+    "build": "pnpm --filter @rolevana/web build",
+    "lint": "pnpm --filter @rolevana/web lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "pnpm --filter @rolevana/database db:generate",
+    "db:migrate": "pnpm --filter @rolevana/database db:migrate",
+    "db:seed": "pnpm --filter @rolevana/database db:seed"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "4.0.18",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}

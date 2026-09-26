@@ -1,0 +1,425 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum ResumeParseStatus {
+  UPLOADED
+  EXTRACTING_TEXT
+  PARSING
+  WAITING_FOR_FREE_AI
+  PARSED
+  REVIEW_REQUIRED
+  VERIFIED
+  FAILED
+}
+enum ResumeVerificationStatus {
+  UNVERIFIED
+  REVIEW_REQUIRED
+  VERIFIED
+}
+enum ResumeStrategy {
+  MASTER_RESUME
+  TAILORED_RESUME
+  NEEDS_REVIEW
+}
+enum JobStatus {
+  DISCOVERED
+  FILTERING
+  REJECTED_NOT_REMOTE
+  REJECTED_LOCATION
+  REJECTED_ROLE
+  ANALYZING
+  BELOW_THRESHOLD
+  QUALIFIED
+  RESUME_GENERATING
+  READY_TO_APPLY
+  APPLYING
+  APPLIED
+  APPLICATION_FAILED
+  EMAIL_SENT
+  NEEDS_REVIEW
+  BLOCKED_CAPTCHA
+  BLOCKED_ASSESSMENT
+  DUPLICATE
+  WITHDRAWN
+}
+enum ApplicationMethod {
+  BROWSER
+  EMAIL
+  MANUAL
+  MOCK
+}
+enum ApplicationStatus {
+  QUEUED
+  APPLYING
+  APPLIED
+  EMAIL_SENT
+  FAILED
+  NEEDS_REVIEW
+  BLOCKED
+  WITHDRAWN
+  SIMULATED
+}
+enum ReviewStatus {
+  OPEN
+  RESOLVED
+  SKIPPED
+  MANUAL
+}
+enum AutopilotStatus {
+  OFF
+  RUNNING
+  PAUSED
+  ERROR
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  candidateProfile CandidateProfile?
+  resumes MasterResume[]
+  applications Application[]
+  settings Setting?
+  oauthConnections OAuthConnection[]
+}
+
+model CandidateProfile {
+  id String @id @default(cuid())
+  userId String @unique
+  fullName String
+  preferredName String?
+  email String
+  phone String
+  city String
+  country String
+  timezone String
+  linkedInUrl String?
+  githubUrl String?
+  portfolioUrl String?
+  websiteUrl String?
+  currentEmployer String?
+  currentRole String?
+  totalYearsExperience Decimal @db.Decimal(4, 1)
+  noticePeriod String?
+  currentCompensation String?
+  expectedCompensation String?
+  preferredSalaryRange String?
+  currency String @default("INR")
+  remoteOnly Boolean @default(true)
+  workAuthorization String?
+  sponsorshipRequired String @default("UNKNOWN")
+  relocationWillingness String @default("CASE_BY_CASE")
+  timezoneFlexibility String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills CandidateSkill[]
+  experiences CandidateExperience[]
+  projects CandidateProject[]
+  education CandidateEducation[]
+  preferences CandidatePreference?
+}
+model CandidateSkill {
+  id String @id @default(cuid())
+  profileId String
+  name String
+  years Decimal? @db.Decimal(4, 1)
+  level String?
+  profile CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@unique([profileId, name])
+}
+model CandidateExperience {
+  id String @id @default(cuid())
+  profileId String
+  company String
+  role String
+  location String?
+  startDate DateTime
+  endDate DateTime?
+  current Boolean @default(false)
+  summary String @db.Text
+  achievements String[]
+  technologies String[]
+  profile CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  @@index([profileId, startDate])
+}
+model CandidateProject {
+  id String @id @default(cuid())
+  profileId String
+  name String
+  description String @db.Text
+  url String?
+  technologies String[]
+  achievements String[]
+  links String[]
+  profile CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+model CandidateEducation {
+  id String @id @default(cuid())
+  profileId String
+  institution String
+  degree String
+  field String?
+  startDate DateTime?
+  endDate DateTime?
+  profile CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+model CandidatePreference {
+  id String @id @default(cuid())
+  profileId String @unique
+  employmentTypes String[]
+  allowedRegions String[]
+  targetTitles String[]
+  excludedTitles String[]
+  profile CandidateProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model MasterResume {
+  id String @id @default(cuid())
+  userId String
+  originalFileName String
+  mimeType String
+  sizeBytes Int
+  storageKey String @unique
+  checksum String @unique
+  version Int @default(1)
+  rawText String? @db.Text
+  parsedData Json?
+  parseStatus ResumeParseStatus @default(UPLOADED)
+  verificationStatus ResumeVerificationStatus @default(UNVERIFIED)
+  uploadedAt DateTime @default(now())
+  isActive Boolean @default(true)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applications Application[]
+  @@index([userId, isActive])
+}
+
+model JobSource {
+  id String @id @default(cuid())
+  name String @unique
+  enabled Boolean @default(true)
+  config Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs Job[]
+  runs JobSourceRun[]
+}
+model Job {
+  id String @id @default(cuid())
+  externalJobId String
+  sourceId String
+  companyName String
+  title String
+  description String @db.Text
+  workplaceType String
+  remoteRegions String[]
+  locations String[]
+  postedAt DateTime?
+  discoveredAt DateTime @default(now())
+  applicationUrl String?
+  jobUrl String
+  canonicalUrl String @unique
+  fingerprint String
+  status JobStatus @default(DISCOVERED)
+  sourceMetadata Json?
+  source JobSource @relation(fields: [sourceId], references: [id])
+  matches JobMatch[]
+  applications Application[]
+  tailoredResumes TailoredResume[]
+  @@unique([sourceId, externalJobId])
+  @@index([fingerprint])
+  @@index([status, postedAt])
+}
+
+model TailoredResume {
+  id String @id @default(cuid())
+  jobId String
+  userId String
+  version Int
+  structuredData Json
+  generatedPdfStorageKey String?
+  pdfGeneratedAt DateTime?
+  pdfExpiresAt DateTime?
+  provider String?
+  model String?
+  validationResult Json
+  createdAt DateTime @default(now())
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  applications Application[]
+  @@unique([jobId, userId, version])
+  @@index([pdfExpiresAt])
+}
+
+model AIAnalysisCache {
+  id String @id @default(cuid())
+  operation String
+  contentHash String
+  result Json
+  provider String
+  model String
+  freeModelVerified Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([operation, contentHash])
+}
+model JobMatch {
+  id String @id @default(cuid())
+  jobId String
+  userId String
+  score Int
+  matchedSkills String[]
+  missingSkills String[]
+  strengths String[]
+  concerns String[]
+  eligibilityStatus String
+  recommendationReason String @db.Text
+  createdAt DateTime @default(now())
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@unique([jobId, userId])
+}
+
+model Application {
+  id String @id @default(cuid())
+  userId String
+  jobId String
+  method ApplicationMethod
+  status ApplicationStatus
+  resumeStrategy ResumeStrategy @default(NEEDS_REVIEW)
+  masterResumeId String?
+  tailoredResumeId String?
+  submittedAt DateTime?
+  confirmationId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id])
+  job Job @relation(fields: [jobId], references: [id])
+  masterResume MasterResume? @relation(fields: [masterResumeId], references: [id])
+  tailoredResume TailoredResume? @relation(fields: [tailoredResumeId], references: [id])
+  attempts ApplicationAttempt[]
+  events ApplicationEvent[]
+  answers ApplicationAnswer[]
+  reviewItems ReviewQueueItem[]
+  @@unique([userId, jobId])
+  @@index([userId, status, createdAt])
+}
+model ApplicationAttempt {
+  id String @id @default(cuid())
+  applicationId String
+  attemptNumber Int
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  result String
+  errorCode String?
+  safeErrorMessage String?
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  @@unique([applicationId, attemptNumber])
+}
+model ApplicationAnswer {
+  id String @id @default(cuid())
+  applicationId String
+  question String @db.Text
+  answer String @db.Text
+  category String
+  createdAt DateTime @default(now())
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+model ApplicationEvent {
+  id String @id @default(cuid())
+  applicationId String
+  type String
+  message String
+  metadata Json?
+  createdAt DateTime @default(now())
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  @@index([applicationId, createdAt])
+}
+model ReviewQueueItem {
+  id String @id @default(cuid())
+  applicationId String
+  reason String
+  question String?
+  status ReviewStatus @default(OPEN)
+  resolution String?
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  @@index([status, createdAt])
+}
+
+model Setting {
+  id String @id @default(cuid())
+  userId String @unique
+  autopilotStatus AutopilotStatus @default(OFF)
+  scanIntervalMinutes Int @default(60)
+  dailyApplicationTarget Int @default(100)
+  minimumMatchScore Int @default(65)
+  dryRun Boolean @default(true)
+  freeAiOnly Boolean @default(true)
+  freeInfraMode Boolean @default(true)
+  maxAiCostMicros Int @default(0)
+  aiJobAnalysisBatchSize Int @default(10)
+  tailoredResumeRetentionDays Int @default(60)
+  aiProvider String @default("mock")
+  aiModel String @default("deterministic-phase-1")
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model OAuthConnection {
+  id String @id @default(cuid())
+  userId String
+  provider String
+  providerAccountId String
+  encryptedAccessToken String
+  encryptedRefreshToken String?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, provider])
+}
+model JobSourceRun {
+  id String @id @default(cuid())
+  sourceId String
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  discoveredCount Int @default(0)
+  errorMessage String?
+  source JobSource @relation(fields: [sourceId], references: [id])
+  @@index([sourceId, startedAt])
+}
+model WorkerRun {
+  id String @id @default(cuid())
+  type String
+  status String
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  metrics Json?
+  safeErrorMessage String?
+  @@index([type, startedAt])
+}
+model AIUsage {
+  id String @id @default(cuid())
+  userId String?
+  provider String
+  model String
+  operation String
+  requests Int @default(1)
+  inputTokens Int @default(0)
+  outputTokens Int @default(0)
+  rateLimitErrors Int @default(0)
+  quotaErrors Int @default(0)
+  estimatedCostMicros Int @default(0)
+  actualCostMicros Int @default(0)
+  freeModelVerified Boolean @default(false)
+  verificationSource String?
+  costMicros Int @default(0)
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+}

@@ -1,0 +1,3 @@
+import { Badge, Card } from "@rolevana/ui";
+export default function ReviewPage() { return <div><div className="flex items-end justify-between"><div><h1 className="m-0 text-3xl font-semibold">Review queue</h1><p className="mt-2 text-sm text-slate-400">Questions and application steps that require human judgment.</p></div><Badge>0 open</Badge></div><Card className="mt-6 grid min-h-72 place-items-center p-8 text-center"><div><div className="text-lg font-semibold">You’re all clear</div><p className="text-sm text-slate-500">Blocked, ambiguous, or sensitive application steps will wait here.</p></div></Card></div>; }
+
