@@ -13,6 +13,9 @@
     "db:generate": "pnpm --filter @rolevana/database db:generate",
     "db:migrate": "pnpm --filter @rolevana/database db:migrate",
     "db:seed": "pnpm --filter @rolevana/database db:seed"
+    ,"ai:doctor": "pnpm --filter @rolevana/web ai:doctor"
+    ,"jobs:scan": "pnpm --filter @rolevana/web jobs:scan"
+    ,"test:integration:jobs": "pnpm --filter @rolevana/web test:integration:jobs"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.0.18",

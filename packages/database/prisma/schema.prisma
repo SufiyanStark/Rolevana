@@ -204,7 +204,15 @@ model MasterResume {
 model JobSource {
   id String @id @default(cuid())
   name String @unique
+  provider String @default("COMPANY_CAREER_PAGE")
+  companyName String?
+  boardIdentifier String?
+  baseUrl String?
   enabled Boolean @default(true)
+  lastSuccessfulScan DateTime?
+  lastFailedScan DateTime?
+  lastError String?
+  jobCount Int @default(0)
   config Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -223,19 +231,47 @@ model Job {
   locations String[]
   postedAt DateTime?
   discoveredAt DateTime @default(now())
+  updatedAt DateTime?
+  lastSeenAt DateTime @default(now())
   applicationUrl String?
   jobUrl String
   canonicalUrl String @unique
   fingerprint String
+  descriptionHash String?
+  frontendClassification String @default("AMBIGUOUS")
+  classificationReason String?
+  freshness String @default("UNKNOWN")
+  locationRestrictions String[]
+  salaryMin Decimal? @db.Decimal(14, 2)
+  salaryMax Decimal? @db.Decimal(14, 2)
+  salaryCurrency String?
+  salaryInterval String?
+  department String?
+  team String?
   status JobStatus @default(DISCOVERED)
   sourceMetadata Json?
   source JobSource @relation(fields: [sourceId], references: [id])
   matches JobMatch[]
   applications Application[]
   tailoredResumes TailoredResume[]
+  sourceReferences JobSourceReference[]
   @@unique([sourceId, externalJobId])
   @@index([fingerprint])
   @@index([status, postedAt])
+}
+
+model JobSourceReference {
+  id String @id @default(cuid())
+  jobId String
+  provider String
+  sourceRecordId String
+  originalUrl String
+  applicationUrl String?
+  attribution String?
+  createdAt DateTime @default(now())
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@unique([jobId, provider, sourceRecordId])
+  @@index([provider, sourceRecordId])
 }
 
 model TailoredResume {
@@ -390,9 +426,43 @@ model JobSourceRun {
   startedAt DateTime @default(now())
   finishedAt DateTime?
   discoveredCount Int @default(0)
+  jobsFetched Int @default(0)
+  jobsCreated Int @default(0)
+  jobsUpdated Int @default(0)
+  duplicatesFound Int @default(0)
+  jobsRejectedNonRemote Int @default(0)
+  jobsRejectedLocation Int @default(0)
+  jobsRejectedRole Int @default(0)
+  ambiguousJobs Int @default(0)
+  latencyMs Int?
   errorMessage String?
   source JobSource @relation(fields: [sourceId], references: [id])
   @@index([sourceId, startedAt])
+}
+
+model JobClassificationCache {
+  id String @id @default(cuid())
+  descriptionHash String @unique
+  result Json
+  provider String
+  model String
+  freeModelVerified Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AIProviderHealthCheck {
+  id String @id @default(cuid())
+  provider String
+  model String?
+  status String
+  authenticated Boolean @default(false)
+  freeVerified Boolean @default(false)
+  inference String @default("NOT_RUN")
+  latencyMs Int?
+  safeMessage String?
+  checkedAt DateTime @default(now())
+  @@index([provider, checkedAt])
 }
 model WorkerRun {
   id String @id @default(cuid())

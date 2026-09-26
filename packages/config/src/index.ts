@@ -31,6 +31,8 @@ export const envSchema = z.object({
   APP_URL: optionalUrl,
   ENCRYPTION_KEY: optionalString,
   JOB_SCAN_INTERVAL_MINUTES: z.coerce.number().int().min(15).default(60),
+  AUTOPILOT_DISCOVERY: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  JOB_SOURCE_BOARD_URLS: z.string().default(""),
   DAILY_APPLICATION_TARGET: z.coerce.number().int().min(1).max(250).default(100),
   MINIMUM_MATCH_SCORE: z.coerce.number().int().min(0).max(100).default(65),
   AI_JOB_ANALYSIS_BATCH_SIZE: z.coerce.number().int().min(1).max(25).default(10),
@@ -51,6 +53,7 @@ export const publicRuntimeConfig = (source: Record<string, string | undefined>) 
     maxAiCostUsd: env.MAX_AI_COST_USD,
     dailyApplicationTarget: env.DAILY_APPLICATION_TARGET,
     scanIntervalMinutes: env.JOB_SCAN_INTERVAL_MINUTES,
+    autopilotDiscovery: env.AUTOPILOT_DISCOVERY,
     minimumMatchScore: env.MINIMUM_MATCH_SCORE,
     aiJobAnalysisBatchSize: env.AI_JOB_ANALYSIS_BATCH_SIZE,
     tailoredResumeRetentionDays: env.TAILORED_RESUME_RETENTION_DAYS

@@ -12,6 +12,7 @@ export interface AIProvider {
   readonly id: "mock" | "openrouter" | "nvidia" | "agent-router";
   readonly model: string;
   classifyJob(description: string): Promise<{ frontendRelevant: boolean; remote: boolean }>;
+  classifyJobs?(jobs: AIJobClassificationInput[]): Promise<AIJobClassification[]>;
   calculateJobMatch(description: string, candidateFacts: string): Promise<JobAnalysis>;
   extractJobRequirements(description: string): Promise<{ required: string[]; preferred: string[] }>;
   tailorResume(description: string, sourceOfTruth: string): Promise<string>;
@@ -21,6 +22,15 @@ export interface AIProvider {
   summarizeJob(description: string): Promise<string>;
   identifyRiskyQuestion(question: string): Promise<boolean>;
 }
+
+export type AIJobClassificationInput = { jobId: string; title: string; description: string; locations: string[]; targetRole?: string; targetRoleCategory?: string };
+export type AIJobClassification = {
+  jobId: string;
+  frontendClassification: "FRONTEND" | "FRONTEND_HEAVY" | "NOT_FRONTEND" | "UNCERTAIN";
+  remoteClassification: "REMOTE" | "HYBRID" | "ONSITE" | "UNKNOWN";
+  targetRoleMatch?: "MATCH" | "NO_MATCH" | "UNCERTAIN";
+  reason: string;
+};
 
 export type FreeAIWaitStatus =
   | "FREE_PROVIDER_RATE_LIMITED"
@@ -61,8 +71,6 @@ export class FreeProviderUnavailableError extends Error {
 
 export function assertFreeModel(candidate: FreeProviderCandidate): void {
   const { provider, pricing } = candidate;
-  const builtInOpenRouterAlias = provider.id === "openrouter" && provider.model === "openrouter/free";
-  if (builtInOpenRouterAlias) return;
   const verified = pricing.verifiedAt !== null && pricing.source !== "UNKNOWN";
   if (!verified || pricing.inputUsdPerMillionTokens !== 0 || pricing.outputUsdPerMillionTokens !== 0) {
     throw new BillableModelBlockedError(provider.id, provider.model);
@@ -145,7 +153,7 @@ export class ProviderNotConfiguredError extends Error {
 
 abstract class PlaceholderProvider implements AIProvider {
   abstract readonly id: AIProvider["id"];
-  constructor(readonly model: string, private readonly apiKey?: string) {}
+  constructor(readonly model: string, protected readonly apiKey?: string, protected readonly fetcher: typeof fetch = fetch) {}
   protected assertConfigured() { if (!this.apiKey) throw new ProviderNotConfiguredError(this.id); }
   async classifyJob(_description: string): Promise<{ frontendRelevant: boolean; remote: boolean }> { this.assertConfigured(); throw new Error("Provider transport is scheduled for Phase 3"); }
   async calculateJobMatch(_description: string, _candidateFacts: string): Promise<JobAnalysis> { this.assertConfigured(); throw new Error("Provider transport is scheduled for Phase 3"); }
@@ -158,13 +166,34 @@ abstract class PlaceholderProvider implements AIProvider {
   async identifyRiskyQuestion(_question: string): Promise<boolean> { this.assertConfigured(); throw new Error("Risk classification is scheduled for Phase 5"); }
 }
 
+const classificationPrompt = (jobs: AIJobClassificationInput[]) => `Classify only target-role relevance and workplace type. Return only a JSON array with jobId, targetRoleMatch (MATCH|NO_MATCH|UNCERTAIN), frontendClassification (FRONTEND|FRONTEND_HEAVY|NOT_FRONTEND|UNCERTAIN), remoteClassification (REMOTE|HYBRID|ONSITE|UNKNOWN), and a short reason. Jobs: ${JSON.stringify(jobs.map((job) => ({ ...job, description: job.description.slice(0, 4000) })))}`;
+const parseClassifications = (body: unknown): AIJobClassification[] => {
+  const content = (body as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content ?? "";
+  const match = content.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error("AI classification response was not valid structured JSON.");
+  const parsed = JSON.parse(match[0]) as AIJobClassification[];
+  return parsed.filter((item) => item && typeof item.jobId === "string" && typeof item.reason === "string");
+};
+async function providerClassification(fetcher: typeof fetch, url: string, apiKey: string, model: string, jobs: AIJobClassificationInput[]) {
+  const response = await fetcher(url, { method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ model, messages: [{ role: "user", content: classificationPrompt(jobs) }], max_tokens: Math.min(1200, 120 + jobs.length * 110), temperature: 0, stream: false }), signal: AbortSignal.timeout(30_000) });
+  if (response.status === 429) throw new FreeProviderUnavailableError("FREE_PROVIDER_RATE_LIMITED", "The verified-free provider is rate limited.");
+  if (response.status === 402) throw new FreeProviderUnavailableError("FREE_PROVIDER_QUOTA_EXHAUSTED", "The verified-free provider quota is exhausted.");
+  if (!response.ok) throw new FreeProviderUnavailableError("FREE_MODEL_UNAVAILABLE", "The verified-free provider is unavailable.");
+  try { return parseClassifications(await response.json()); }
+  catch { throw new FreeProviderUnavailableError("FREE_MODEL_UNAVAILABLE", "The verified-free provider returned unusable classification output."); }
+}
+
 export class OpenRouterProvider extends PlaceholderProvider {
   readonly id = "openrouter" as const;
-  constructor(model: string, apiKey?: string) { super(model, apiKey); }
+  constructor(model: string, apiKey?: string, fetcher?: typeof fetch) { super(model, apiKey, fetcher); }
+  async classifyJobs(jobs: AIJobClassificationInput[]) { this.assertConfigured(); return providerClassification(this.fetcher, "https://openrouter.ai/api/v1/chat/completions", this.apiKey!, this.model, jobs); }
+  override async classifyJob(description: string) { const [result] = await this.classifyJobs([{ jobId: "job", title: "", description, locations: [] }]); return { frontendRelevant: result?.frontendClassification === "FRONTEND" || result?.frontendClassification === "FRONTEND_HEAVY", remote: result?.remoteClassification === "REMOTE" }; }
 }
 export class NvidiaProvider extends PlaceholderProvider {
   readonly id = "nvidia" as const;
-  constructor(model: string, apiKey?: string) { super(model, apiKey); }
+  constructor(model: string, apiKey?: string, fetcher?: typeof fetch) { super(model, apiKey, fetcher); }
+  async classifyJobs(jobs: AIJobClassificationInput[]) { this.assertConfigured(); return providerClassification(this.fetcher, "https://integrate.api.nvidia.com/v1/chat/completions", this.apiKey!, this.model, jobs); }
+  override async classifyJob(description: string) { const [result] = await this.classifyJobs([{ jobId: "job", title: "", description, locations: [] }]); return { frontendRelevant: result?.frontendClassification === "FRONTEND" || result?.frontendClassification === "FRONTEND_HEAVY", remote: result?.remoteClassification === "REMOTE" }; }
 }
 export class AgentRouterProvider extends PlaceholderProvider {
   readonly id = "agent-router" as const;
@@ -175,6 +204,7 @@ export class MockAIProvider implements AIProvider {
   readonly id = "mock" as const;
   readonly model = "deterministic-phase-1";
   async classifyJob(description: string) { const text = description.toLowerCase(); return { frontendRelevant: /react|frontend|typescript/.test(text), remote: /remote/.test(text) }; }
+  async classifyJobs(jobs: AIJobClassificationInput[]) { return Promise.all(jobs.map(async (job) => { const result = await this.classifyJob(`${job.title} ${job.description}`); const target = job.targetRole?.toLowerCase() ?? "frontend"; const targetRoleMatch = `${job.title} ${job.description}`.toLowerCase().includes(target.split(" ")[0] ?? target) ? "MATCH" as const : "UNCERTAIN" as const; return { jobId: job.jobId, targetRoleMatch, frontendClassification: result.frontendRelevant ? "FRONTEND" as const : "NOT_FRONTEND" as const, remoteClassification: result.remote ? "REMOTE" as const : "UNKNOWN" as const, reason: "Deterministic mock classification." }; })); }
   async calculateJobMatch(): Promise<JobAnalysis> { return { matchScore: 82, matchedSkills: ["React", "TypeScript"], missingRequiredSkills: [], missingPreferredSkills: ["GraphQL"], strengths: ["Strong frontend alignment"], concerns: [], recommendationReason: "Mock qualified job for local development." }; }
   async extractJobRequirements() { return { required: ["React", "TypeScript"], preferred: ["GraphQL"] }; }
   async tailorResume(_description: string, sourceOfTruth: string) { return sourceOfTruth; }
@@ -184,3 +214,5 @@ export class MockAIProvider implements AIProvider {
   async summarizeJob(description: string) { return description.slice(0, 200); }
   async identifyRiskyQuestion(question: string) { return /visa|salary|criminal|legal|sponsor/i.test(question); }
 }
+
+export * from "./diagnostics";

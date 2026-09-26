@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { createEmptyCandidateProfile, RESUME_PARSER_VERSION, type CandidateProfile, type MasterResume, type ParsedResumeData, type ProfileMergeConflict, type ProfileMergeSummary, type ResumeParsingStatus } from "@rolevana/domain";
+import { createEmptyCandidateProfile, initializeTargetRole, RESUME_PARSER_VERSION, type CandidateProfile, type MasterResume, type ParsedResumeData, type ProfileMergeConflict, type ProfileMergeSummary, type ResumeParsingStatus } from "@rolevana/domain";
 
 export type ResumeImportReview = { conflicts: ProfileMergeConflict[]; summary: ProfileMergeSummary; updatedAt: string };
 
@@ -46,7 +46,7 @@ export async function readLocalProfile(userId: string): Promise<CandidateProfile
     if (value) await writeJsonAtomic(paths.profile, { ...createEmptyCandidateProfile(), ...value });
   }
   if (!value) return null;
-  const normalized = { ...createEmptyCandidateProfile(), ...value } as CandidateProfile;
+  const normalized = initializeTargetRole({ ...createEmptyCandidateProfile(), ...value } as CandidateProfile);
   developmentLog("PROFILE_LOADED", { userId, skills: normalized.skills.length, experience: normalized.experience.length, projects: normalized.projects.length, education: normalized.education.length });
   return normalized;
 }

@@ -93,6 +93,9 @@ importers:
       tailwindcss:
         specifier: latest
         version: 4.3.3
+      tsx:
+        specifier: latest
+        version: 4.23.15
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -146,6 +149,10 @@ importers:
         version: 5.9.3
 
   packages/job-sources:
+    dependencies:
+      '@rolevana/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       typescript:
         specifier: 5.9.3

@@ -1,30 +1,101 @@
-import { phaseOneMockJobs } from "@rolevana/job-sources";
 import { publicRuntimeConfig } from "@rolevana/config";
 import { Badge, Button, Card } from "@rolevana/ui";
-import { ArrowUpRight, Bot, Briefcase, Check, Clock3, Coins, Database, FileText, HardDrive, Radar, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ArrowUpRight, Bot, Clock3, Coins, Radar, Rocket, ShieldCheck, Target, TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { getSessionUser } from "@/lib/auth";
+import { readAIProviderHealth, readJobSourceRegistry, readLocalJobSummaries, readSourceRuns } from "@/lib/job-store";
+import { readLocalProfile } from "@/lib/local-store";
+import { discoveryMetricsFromSummaries } from "@/lib/discovery";
+import { DiscoveryControls } from "@/components/discovery-controls";
 
-const metrics = [
-  { label: "Jobs discovered", value: "43", delta: "+12 today", icon: Radar },
-  { label: "Qualified", value: "18", delta: "42% match", icon: ShieldCheck },
-  { label: "Applications", value: "0", delta: "Dry run", icon: Check },
-  { label: "Needs review", value: "3", delta: "Human input", icon: TriangleAlert }
-];
-const statuses = ["QUALIFIED", "READY TO APPLY", "SKIPPED · REGION"];
+const autopilotModes = [
+  { id: "discovery", label: "Discovery Only", description: "Find jobs matching your target. No applications.", enabled: true },
+  { id: "review", label: "Review Before Apply", description: "Queue matched jobs for your manual approval.", enabled: false },
+  { id: "auto", label: "Full Auto Apply", description: "Automatically tailor and submit applications.", enabled: false },
+] as const;
 
-export default function Dashboard() {
-  const config = publicRuntimeConfig(process.env);
-  const costMetrics = [
-    { label: "AI spend", value: `$${config.maxAiCostUsd.toFixed(2)}`, copy: "Verified-free models only", icon: Coins },
-    { label: "AI requests", value: "0", copy: `Batches of up to ${config.aiJobAnalysisBatchSize}`, icon: Bot },
-    { label: "Database tier", value: "Free", copy: "Supabase-compatible", icon: Database },
-    { label: "Resume storage", value: "0 MB", copy: `${config.tailoredResumeRetentionDays}-day PDF retention`, icon: HardDrive }
-  ];
+const pipelineSteps = ["Discover", "Target role filter", "Remote/location filter", "Experience check", "Candidate match", "Resume strategy", "Tailor if needed", "Truthfulness check", "Application method", "Apply", "Confirmation", "Tracking"];
+
+export default async function Dashboard() {
+  const config = publicRuntimeConfig(process.env); const user = await getSessionUser();
+  const [items, profile, sources, runs, health] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id)]) : [[], null, [], [], []];
+  const metrics = discoveryMetricsFromSummaries(items); const latestRun = runs[0]; const healthy = sources.filter((source) => source.lastSuccessfulScan && !source.lastError).length; const failing = sources.filter((source) => source.lastError).length;
+  const cards = [["Discovered today",metrics.jobsDiscoveredToday,"Real public listings",Radar],["New in last hour",metrics.newLastHour,"By discovery time",Clock3],["Remote eligible",metrics.remoteEligible,"Target role + region",ShieldCheck],["Needs classification",metrics.needsClassification,"Never discarded",TriangleAlert]] as const;
+
   return <div className="space-y-7">
-    <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><Badge className="mb-4 border-cyan-300/20 bg-cyan-300/10 text-cyan-200">Phase 1 · Foundation</Badge><h1 className="m-0 max-w-3xl text-3xl font-semibold tracking-[-.04em] md:text-5xl">Your job search,<br/><span className="text-slate-500">quietly in motion.</span></h1><p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">Complete your source-of-truth profile and master resume. Rolevana will only automate from facts you provide.</p></div><Button asChild size="lg"><Link href="/profile">Complete profile <ArrowUpRight size={17}/></Link></Button></section>
-    <Card className="overflow-hidden"><div className="grid gap-px bg-white/[.06] md:grid-cols-[1.4fr_1fr_1fr]"><div className="bg-slate-900 p-6"><div className="mb-5 flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Autopilot</span><Badge className="border-slate-600 text-slate-400">Off</Badge></div><div className="flex items-end gap-3"><span className="text-4xl font-semibold tracking-tight">0</span><span className="pb-1 text-slate-500">/ 100 today</span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full w-0 bg-cyan-400"/></div></div><div className="bg-slate-900 p-6"><div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Next job hunt</div><div className="mt-6 flex items-center gap-3 text-2xl font-semibold"><Clock3 className="text-cyan-300"/>Not scheduled</div><p className="text-xs text-slate-500">Enable after profile setup</p></div><div className="bg-slate-900 p-6"><div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Safety mode</div><div className="mt-6 flex items-center gap-3 text-2xl font-semibold"><ShieldCheck className="text-emerald-300"/>Dry run</div><p className="text-xs text-slate-500">Real submissions are blocked</p></div></div></Card>
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(({label,value,delta,icon:Icon}) => <Card className="p-5" key={label}><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-400">{label}</span><Icon size={17} className="text-slate-600"/></div><div className="text-3xl font-semibold tracking-tight">{value}</div><div className="mt-1 text-xs text-slate-500">{delta}</div></Card>)}</section>
-    <section><div className="mb-3 flex items-center justify-between"><h2 className="m-0 text-base font-semibold">Cost & usage</h2><div className="flex gap-2"><Badge className="border-emerald-300/20 bg-emerald-300/10 text-emerald-200">AI · Free only</Badge><Badge className="border-emerald-300/20 bg-emerald-300/10 text-emerald-200">Infrastructure · Free</Badge></div></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{costMetrics.map(({label,value,copy,icon:Icon}) => <Card className="p-5" key={label}><div className="flex items-center justify-between text-sm text-slate-400"><span>{label}</span><Icon size={16}/></div><div className="mt-4 text-2xl font-semibold">{value}</div><div className="mt-1 text-xs text-slate-500">{copy}</div></Card>)}</div><p className="mb-0 mt-2 text-[11px] text-slate-600">Free-tier labels reflect configuration, not independently verified provider billing statements.</p></section>
-    <section className="grid gap-5 xl:grid-cols-[1.7fr_1fr]"><Card><div className="flex items-center justify-between border-b border-white/[.07] p-5"><div><h2 className="m-0 text-base font-semibold">Fresh remote roles</h2><p className="mb-0 mt-1 text-xs text-slate-500">Mock source · newest first</p></div><Button asChild variant="ghost" size="sm"><Link href="/jobs">View all <ArrowUpRight size={14}/></Link></Button></div><div>{phaseOneMockJobs.map((job,index) => <div className="grid gap-3 border-b border-white/[.05] px-5 py-4 last:border-0 md:grid-cols-[1fr_auto_auto] md:items-center" key={job.externalJobId}><div><div className="font-medium">{job.title}</div><div className="mt-1 text-xs text-slate-500">{job.companyName} · {job.remoteRegions.join(", ")}</div></div><Badge className={index === 2 ? "text-amber-200" : "text-cyan-200"}>{index === 0 ? "91% match" : index === 1 ? "86% match" : "Location check"}</Badge><span className="text-xs text-slate-500">{statuses[index]}</span></div>)}</div></Card><Card className="p-5"><div className="flex items-center gap-2"><FileText size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Setup checklist</h2></div><div className="mt-5 space-y-4">{[["Candidate profile","Add verified facts",false],["Master resume","Upload PDF or DOCX",false],["Remote regions","Confirm eligibility",false],["Dry-run pipeline","Ready",true]].map(([title,copy,done]) => <div className="flex items-start gap-3" key={String(title)}><span className={`mt-0.5 grid size-5 place-items-center rounded-full border ${done ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-white/10 text-slate-600"}`}>{done ? <Check size={12}/> : null}</span><div><div className="text-sm font-medium">{title}</div><div className="mt-1 text-xs text-slate-500">{copy}</div></div></div>)}</div><Button asChild variant="secondary" className="mt-6 w-full"><Link href="/profile"><Briefcase size={15}/>Set up Rolevana</Link></Button></Card></section>
+    <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div>
+        <Badge className="mb-4 border-cyan-300/20 bg-cyan-300/10 text-cyan-200">Phase 2 · Discovery</Badge>
+        <h1 className="m-0 max-w-3xl text-3xl font-semibold tracking-[-.04em] md:text-5xl">{profile?.primaryTargetRoleTitle ? <>{profile.primaryTargetRoleTitle} roles,<br/><span className="text-slate-500">found without applying.</span></> : <>Remote roles,<br/><span className="text-slate-500">found without applying.</span></>}</h1>
+        <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">Public job feeds and ATS boards are filtered remote-first. Applications and email remain fully disabled.</p>
+      </div>
+      <DiscoveryControls/>
+    </section>
+
+    {/* Status panel */}
+    <Card className="overflow-hidden"><div className="grid gap-px bg-white/[.06] md:grid-cols-3">
+      <div className="bg-slate-900 p-6"><div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Autopilot discovery</div><div className="mt-5 text-2xl font-semibold">{config.autopilotDiscovery?"Enabled":"Off"}</div><p className="text-xs text-slate-500">{config.autopilotDiscovery?`Every ${config.scanIntervalMinutes} minutes`:`Manual scans available`}</p></div>
+      <div className="bg-slate-900 p-6"><div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Last scan</div><div className="mt-5 text-2xl font-semibold">{latestRun ? new Date(latestRun.finishedAt).toLocaleString() : "Not run"}</div><p className="text-xs text-slate-500">{healthy} healthy · {failing} failing · {sources.length} configured</p></div>
+      <div className="bg-slate-900 p-6"><div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500">Safety mode</div><div className="mt-5 flex items-center gap-2 text-2xl font-semibold"><ShieldCheck className="text-emerald-300"/>Dry run</div><p className="text-xs text-slate-500">0 applications · 0 emails</p></div>
+    </div></Card>
+
+    {/* Metric cards */}
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label,value,copy,Icon])=><Card className="p-5" key={label}><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-400">{label}</span><Icon size={17} className="text-slate-600"/></div><div className="text-3xl font-semibold">{value}</div><div className="mt-1 text-xs text-slate-500">{copy}</div></Card>)}</section>
+
+    {/* Autopilot UX panel */}
+    <section className="grid gap-5 xl:grid-cols-[1fr_1fr]">
+      <Card className="p-0 overflow-hidden">
+        <div className="border-b border-white/[.07] p-5">
+          <div className="flex items-center gap-2"><Rocket size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Autopilot</h2></div>
+          <p className="mb-0 mt-1 text-xs text-slate-500">Current mode: Discovery Only · Application engine not enabled yet.</p>
+        </div>
+        <div className="grid gap-px bg-white/[.06]">
+          {autopilotModes.map((mode) => <div className={`flex items-center justify-between bg-slate-900 px-5 py-4 ${!mode.enabled ? "opacity-50" : ""}`} key={mode.id}>
+            <div>
+              <div className="flex items-center gap-2"><span className={`inline-block size-2 rounded-full ${mode.enabled ? "bg-emerald-400" : "bg-slate-600"}`}/><span className="text-sm font-semibold">{mode.label}</span></div>
+              <div className="ml-4 mt-0.5 text-xs text-slate-500">{mode.description}</div>
+            </div>
+            <Badge className={mode.enabled ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200" : "border-white/10 text-slate-500"}>{mode.enabled ? "Active" : "Coming soon"}</Badge>
+          </div>)}
+        </div>
+        <div className="border-t border-white/[.07] p-5">
+          <div className="text-xs font-bold uppercase tracking-[.14em] text-slate-500 mb-3">Application pipeline</div>
+          <div className="flex flex-wrap gap-1.5">{pipelineSteps.map((step, i) => <span className="flex items-center gap-1 text-[10px]" key={step}><span className={`rounded px-1.5 py-0.5 ${i === 0 ? "bg-cyan-300/15 text-cyan-200" : "bg-white/[.04] text-slate-500"}`}>{step}</span>{i < pipelineSteps.length - 1 && <span className="text-slate-600">→</span>}</span>)}</div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center gap-2 mb-5"><Target size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Target configuration</h2></div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
+          <dt className="text-slate-500">Autopilot mode</dt><dd className="m-0 text-right font-medium">Discovery Only</dd>
+          <dt className="text-slate-500">Target role</dt><dd className="m-0 text-right font-medium text-cyan-200">{profile?.primaryTargetRoleTitle || "Not set"}</dd>
+          <dt className="text-slate-500">Role category</dt><dd className="m-0 text-right">{profile?.primaryTargetRoleCategory?.replace(/_/g, " ") ?? "—"}</dd>
+          <dt className="text-slate-500">Experience</dt><dd className="m-0 text-right">{profile?.totalYearsExperience ?? 0} years (±{profile?.experienceToleranceYears ?? 1}y tolerance)</dd>
+          <dt className="text-slate-500">Remote</dt><dd className="m-0 text-right">Remote only</dd>
+          <dt className="text-slate-500">Regions</dt><dd className="m-0 text-right">{profile?.allowedRegions?.join(", ") ?? "India, Worldwide, APAC"}</dd>
+          <dt className="text-slate-500">Scan interval</dt><dd className="m-0 text-right">{config.scanIntervalMinutes} minutes</dd>
+          <dt className="text-slate-500">Applications today</dt><dd className="m-0 text-right">0 / {config.dailyApplicationTarget}</dd>
+          <dt className="text-slate-500">Application engine</dt><dd className="m-0 text-right text-amber-200">Not enabled yet</dd>
+        </dl>
+      </Card>
+    </section>
+
+    {/* Jobs + AI section */}
+    <section className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
+      <Card>
+        <div className="flex items-center justify-between border-b border-white/[.07] p-5">
+          <div><h2 className="m-0 text-base font-semibold">Fresh jobs</h2><p className="mb-0 mt-1 text-xs text-slate-500">Newest known posted date first</p></div>
+          <Button asChild variant="ghost" size="sm"><Link href="/jobs">View all <ArrowUpRight size={14}/></Link></Button>
+        </div>
+        {items.slice(0,6).map((item)=><Link className="block border-b border-white/[.05] px-5 py-4 last:border-0 hover:bg-white/[.02]" href={`/jobs/${item.id}`} key={item.id}>
+          <div className="flex items-center justify-between gap-4"><div><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.companyName} · {item.source} · {item.regions.join(", ")}</div></div><Badge>{item.status}</Badge></div>
+        </Link>)}
+        {!items.length&&<div className="p-8 text-center text-sm text-slate-500">Run a scan to discover real jobs.</div>}
+      </Card>
+      <div className="space-y-5">
+        <Card className="p-5"><div className="flex items-center gap-2"><Bot size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">AI providers</h2></div><div className="mt-4 space-y-3">{["openrouter","nvidia","agent-router"].map((provider)=>{const item=health.find((entry)=>entry.provider===provider);return <div className="flex items-center justify-between text-sm" key={provider}><span className="capitalize text-slate-400">{provider.replace("-"," ")}</span><Badge>{item?.status??"NOT TESTED"}</Badge></div>;})}</div></Card>
+        <Card className="p-5"><div className="flex items-center gap-2"><Coins size={18} className="text-emerald-300"/><h2 className="m-0 text-base font-semibold">AI spend today</h2></div><div className="mt-4 text-3xl font-semibold">$0.00</div><p className="mb-0 text-xs text-slate-500">Free AI only enabled · unknown-cost models blocked.</p></Card>
+      </div>
+    </section>
   </div>;
 }

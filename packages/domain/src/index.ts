@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { roleCategories, targetRoleDefaults } from "./roles";
 
 export const employmentTypes = ["FULL_TIME", "CONTRACT", "PART_TIME", "INTERNSHIP"] as const;
 export const remoteRegions = ["India", "Worldwide", "APAC", "Middle East", "UAE", "Saudi Arabia", "Qatar", "Bahrain", "Europe", "UK", "US"] as const;
@@ -64,6 +65,13 @@ export const candidateProfileSchema = z.object({
   sponsorshipRequired: z.enum(["YES", "NO", "UNKNOWN"]),
   relocationWillingness: z.enum(["YES", "NO", "CASE_BY_CASE"]),
   timezoneFlexibility: z.string().max(1000).default(""),
+  primaryTargetRoleTitle: z.string().trim().max(120).default(""),
+  primaryTargetRoleCategory: z.enum(roleCategories).default("OTHER"),
+  secondaryTargetRoles: z.array(z.string().trim().min(1).max(120)).default([]),
+  includeRelatedTitles: z.boolean().default(true),
+  experienceToleranceYears: z.number().int().min(0).max(10).default(1),
+  minimumSeniority: z.enum(["INTERN","JUNIOR","MID","SENIOR","LEAD","STAFF","PRINCIPAL","MANAGER","UNKNOWN"]).default("UNKNOWN"),
+  maximumSeniority: z.enum(["INTERN","JUNIOR","MID","SENIOR","LEAD","STAFF","PRINCIPAL","MANAGER","UNKNOWN"]).default("UNKNOWN"),
   skills: z.array(candidateSkillSchema),
   experience: z.array(experienceSchema),
   projects: z.array(projectSchema).default([]),
@@ -80,8 +88,13 @@ export const createEmptyCandidateProfile = (): CandidateProfile => ({
   totalYearsExperience: 0, noticePeriod: "", currentCompensation: "", expectedCompensation: "",
   preferredSalaryRange: "", currency: "INR", employmentTypes: ["FULL_TIME"], remoteOnly: true,
   allowedRegions: ["India", "Worldwide", "APAC"], workAuthorization: "", sponsorshipRequired: "UNKNOWN",
-  relocationWillingness: "CASE_BY_CASE", timezoneFlexibility: "", skills: [], experience: [], projects: [], education: []
+  relocationWillingness: "CASE_BY_CASE", timezoneFlexibility: "", primaryTargetRoleTitle: "", primaryTargetRoleCategory: "OTHER", secondaryTargetRoles: [], includeRelatedTitles: true, experienceToleranceYears: 1, minimumSeniority: "UNKNOWN", maximumSeniority: "UNKNOWN", skills: [], experience: [], projects: [], education: []
 });
+
+export function initializeTargetRole<T extends CandidateProfile>(profile: T): T {
+  if (profile.primaryTargetRoleTitle || !profile.currentRole.trim()) return profile;
+  return { ...profile, ...targetRoleDefaults(profile.currentRole) };
+}
 
 export const resumeParsingStatuses = ["UPLOADED", "EXTRACTING_TEXT", "PARSING", "WAITING_FOR_FREE_AI", "PARSED", "REVIEW_REQUIRED", "VERIFIED", "FAILED"] as const;
 export type ResumeParsingStatus = typeof resumeParsingStatuses[number];
@@ -116,3 +129,4 @@ export type MasterResume = z.infer<typeof masterResumeSchema>;
 export { parseResumeText } from "./resume-parser";
 export { mergeResumeIntoCandidateProfile, type ProfileMergeConflict, type ProfileMergeResult, type ProfileMergeSummary } from "./resume-merge";
 export { selectResumeStrategy, validateTailoredResumeClaims, type ResumeStrategy, type TraceableResumeClaim } from "./resume-strategy";
+export * from "./roles";
