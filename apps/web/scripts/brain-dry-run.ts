@@ -1,0 +1,8 @@
+import { qualifyJob } from "@rolevana/brain";
+import { loadRolevanaEnv } from "./load-env";
+import { readLocalJobs } from "../src/lib/job-store";
+import { readLocalProfile } from "../src/lib/local-store";
+import { processWithRolevana } from "../src/lib/brain-service";
+
+async function main(){loadRolevanaEnv();const userId="local-development-user";const[profile,jobs]=await Promise.all([readLocalProfile(userId),readLocalJobs(userId)]);if(!profile)throw new Error("No local candidate profile is available.");const job=jobs.find((item)=>qualifyJob(item,profile).qualified);if(!job)throw new Error("No locally stored qualified target-role job is available.");const record=await processWithRolevana(userId,job.id??job.descriptionHash,1);console.log(JSON.stringify({job:`${record.jobTitle} — ${record.company}`,qualification:record.transitions.find((item)=>item.state==="QUALIFIED")?.reason??record.state,match:record.match?.overallScore??null,matchedSkills:record.match?.matchedSkills??[],missingSkills:record.match?.missingRequiredSkills??[],resumeStrategy:record.resumeStrategy,tailoredChanges:record.resumeVersion?.content.bullets.map((item)=>({text:item.text,evidenceIds:item.sourceEvidenceIds}))??[],evidenceUsed:record.resumeVersion?.evidenceIds??[],atsCompatibility:record.ats,truthfulness:record.truthfulness,applicationReadiness:record.application?.status??record.state,providers:record.provenance.length?record.provenance:[{provider:"deterministic",model:"rules-v1"}],fallbacks:record.provenance.reduce((sum,item)=>sum+item.fallbackCount,0),aiCostUsd:0,applicationsSubmitted:record.applicationsSubmitted,emailsSent:record.emailsSent},null,2));}
+void main();

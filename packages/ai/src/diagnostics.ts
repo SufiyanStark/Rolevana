@@ -1,155 +1,43 @@
-export const aiProviderIds = ["openrouter", "nvidia", "agent-router"] as const;
+export const aiProviderIds = ["openrouter","nvidia","ovh","llm7","kilo","groq","gemini","cloudflare","agent-router"] as const;
 export type DiagnosticProviderId = typeof aiProviderIds[number];
-export type AIProviderHealthStatus =
-  | "NOT_CONFIGURED" | "CHECKING" | "AUTHENTICATED" | "WORKING" | "MODEL_NOT_CONFIGURED"
-  | "AUTHENTICATED_MODEL_SELECTION_REQUIRED" | "FREE_MODEL_UNVERIFIED" | "PAID_MODEL_BLOCKED"
-  | "INVALID_API_KEY" | "RATE_LIMITED" | "QUOTA_EXHAUSTED" | "PROVIDER_UNAVAILABLE"
-  | "MODEL_UNAVAILABLE" | "WAITING_FOR_FREE_AI" | "ERROR";
-
-export type AIProviderHealth = {
-  provider: DiagnosticProviderId;
-  configured: boolean;
-  authenticated: boolean;
-  status: AIProviderHealthStatus;
-  model: string | null;
-  freeVerified: boolean;
-  inference: "PASS" | "FAIL" | "NOT_RUN";
-  latencyMs: number | null;
-  checkedAt: string;
-  estimatedCostUsd: 0;
-  availableModels?: string[];
-  safeMessage?: string;
-};
-
-export type AIProviderDiagnosticConfig = {
-  openrouterApiKey?: string;
-  openrouterModel?: string;
-  nvidiaApiKey?: string;
-  nvidiaModel?: string;
-  nvidiaFreeModels?: string[];
-  agentRouterApiKey?: string;
-  agentRouterModel?: string;
-  agentRouterFreeModels?: string[];
-  freeAiOnly: boolean;
-  maxAiCostUsd: number;
-};
-
-type Fetch = typeof fetch;
-type ModelRecord = { id?: string; pricing?: { prompt?: string | number; completion?: string | number } };
-const nowIso = () => new Date().toISOString();
-const splitAllowlist = (values?: string[]) => new Set((values ?? []).map((value) => value.trim()).filter(Boolean));
-const safeHealth = (provider: DiagnosticProviderId, update: Partial<AIProviderHealth>): AIProviderHealth => ({
-  provider, configured: false, authenticated: false, status: "NOT_CONFIGURED", model: null, freeVerified: false,
-  inference: "NOT_RUN", latencyMs: null, checkedAt: nowIso(), estimatedCostUsd: 0, ...update
-});
-const mapHttpStatus = (status: number): AIProviderHealthStatus => {
-  if (status === 401 || status === 403) return "INVALID_API_KEY";
-  if (status === 429) return "RATE_LIMITED";
-  if (status === 402) return "QUOTA_EXHAUSTED";
-  if (status >= 500) return "PROVIDER_UNAVAILABLE";
-  return "ERROR";
-};
-const zeroPricing = (model?: ModelRecord | null) => model?.pricing !== undefined
-  && Number(model.pricing.prompt) === 0 && Number(model.pricing.completion) === 0;
-const responseContent = (body: unknown): string => {
-  const data = body as { choices?: Array<{ message?: { content?: string } }> };
-  return data.choices?.[0]?.message?.content?.trim() ?? "";
-};
-const hasCompletion = (body: unknown) => Array.isArray((body as { choices?: unknown[] }).choices) && ((body as { choices: unknown[] }).choices.length > 0);
-
-async function jsonRequest(fetcher: Fetch, url: string, init: RequestInit, timeoutMs = 15_000): Promise<{ response: Response; body: unknown; latencyMs: number }> {
-  const started = Date.now();
-  const response = await fetcher(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
-  let body: unknown = null;
-  try { body = await response.json(); } catch { body = null; }
-  return { response, body, latencyMs: Date.now() - started };
-}
+export type AIProviderHealthStatus = "NOT_CONFIGURED"|"CHECKING"|"AUTHENTICATED"|"WORKING"|"MODEL_NOT_CONFIGURED"|"AUTHENTICATED_MODEL_SELECTION_REQUIRED"|"FREE_MODEL_UNVERIFIED"|"PAID_MODEL_BLOCKED"|"INVALID_API_KEY"|"RATE_LIMITED"|"QUOTA_EXHAUSTED"|"PROVIDER_UNAVAILABLE"|"MODEL_UNAVAILABLE"|"WAITING_FOR_FREE_AI"|"ERROR";
+export type AIProviderHealth = { provider:DiagnosticProviderId;configured:boolean;authenticated:boolean;status:AIProviderHealthStatus;model:string|null;freeVerified:boolean;inference:"PASS"|"FAIL"|"NOT_RUN";latencyMs:number|null;checkedAt:string;estimatedCostUsd:0;privacyClasses:("PUBLIC_JOB_DATA"|"SANITIZED_CANDIDATE_DATA"|"SENSITIVE_CANDIDATE_DATA")[];cooldownUntil?:string;availableModels?:string[];safeMessage?:string };
+export type AIProviderDiagnosticConfig = { openrouterApiKey?:string;openrouterModel?:string;nvidiaApiKey?:string;nvidiaModel?:string;nvidiaModels?:string[];nvidiaFreeModels?:string[];ovhBaseUrl?:string;ovhModel?:string;ovhApiKey?:string;ovhFreeModels?:string[];llm7BaseUrl?:string;llm7Model?:string;llm7FreeModels?:string[];kiloBaseUrl?:string;kiloModel?:string;kiloFreeModels?:string[];groqApiKey?:string;geminiApiKey?:string;cloudflareApiToken?:string;agentRouterApiKey?:string;agentRouterModel?:string;agentRouterFreeModels?:string[];freeAiOnly:boolean;maxAiCostUsd:number };
+type Fetch=typeof fetch; type ModelRecord={id?:string;pricing?:{prompt?:string|number;completion?:string|number}};
+const nowIso=()=>new Date().toISOString(); const listSet=(values?:string[])=>new Set((values??[]).map((value)=>value.trim()).filter(Boolean));
+const privacy=(publicOnly=false):AIProviderHealth["privacyClasses"]=>publicOnly?["PUBLIC_JOB_DATA"]:["PUBLIC_JOB_DATA","SANITIZED_CANDIDATE_DATA"];
+const safeHealth=(provider:DiagnosticProviderId,update:Partial<AIProviderHealth>):AIProviderHealth=>({provider,configured:false,authenticated:false,status:"NOT_CONFIGURED",model:null,freeVerified:false,inference:"NOT_RUN",latencyMs:null,checkedAt:nowIso(),estimatedCostUsd:0,privacyClasses:privacy(),...update});
+const mapHttpStatus=(status:number):AIProviderHealthStatus=>status===401||status===403?"INVALID_API_KEY":status===429?"RATE_LIMITED":status===402?"QUOTA_EXHAUSTED":status>=500?"PROVIDER_UNAVAILABLE":"ERROR";
+const zeroPricing=(model?:ModelRecord|null)=>model?.pricing!==undefined&&Number(model.pricing.prompt)===0&&Number(model.pricing.completion)===0;
+const responseContent=(body:unknown)=>(body as {choices?:Array<{message?:{content?:string}}>}).choices?.[0]?.message?.content?.trim()??"";
+const hasCompletion=(body:unknown)=>Array.isArray((body as {choices?:unknown[]}).choices)&&((body as {choices:unknown[]}).choices.length>0);
+const unique=<T>(items:T[])=>[...new Set(items)];
+async function jsonRequest(fetcher:Fetch,url:string,init:RequestInit={},timeoutMs=15_000){const started=Date.now();const response=await fetcher(url,{...init,signal:AbortSignal.timeout(timeoutMs)});let body:unknown=null;try{body=await response.json();}catch{}return{response,body,latencyMs:Date.now()-started};}
 
 export class AIProviderDiagnostics {
-  constructor(private readonly config: AIProviderDiagnosticConfig, private readonly fetcher: Fetch = fetch) {}
-
-  async diagnose(provider: DiagnosticProviderId): Promise<AIProviderHealth> {
-    if (!this.config.freeAiOnly || this.config.maxAiCostUsd !== 0) return safeHealth(provider, { configured: true, status: "PAID_MODEL_BLOCKED", safeMessage: "Diagnostics require FREE_AI_ONLY=true and a zero AI budget." });
-    try {
-      if (provider === "openrouter") return await this.openRouter();
-      if (provider === "nvidia") return await this.nvidia();
+  constructor(private readonly config:AIProviderDiagnosticConfig,private readonly fetcher:Fetch=fetch){}
+  async diagnose(provider:DiagnosticProviderId):Promise<AIProviderHealth>{
+    if(!this.config.freeAiOnly||this.config.maxAiCostUsd!==0)return safeHealth(provider,{configured:true,status:"PAID_MODEL_BLOCKED",safeMessage:"Diagnostics require FREE_AI_ONLY=true and a zero AI budget."});
+    try{
+      if(provider==="openrouter")return await this.openRouter(); if(provider==="nvidia")return await this.nvidia();
+      if(provider==="ovh")return await this.compatible("ovh",this.config.ovhBaseUrl,this.config.ovhModel,this.config.ovhFreeModels,this.config.ovhApiKey,true);
+      if(provider==="llm7")return await this.compatible("llm7",this.config.llm7BaseUrl,this.config.llm7Model,this.config.llm7FreeModels,undefined,true);
+      if(provider==="kilo")return await this.compatible("kilo",this.config.kiloBaseUrl,this.config.kiloModel,this.config.kiloFreeModels,undefined,true);
+      if(provider==="groq")return this.placeholder("groq",Boolean(this.config.groqApiKey)); if(provider==="gemini")return this.placeholder("gemini",Boolean(this.config.geminiApiKey)); if(provider==="cloudflare")return this.placeholder("cloudflare",Boolean(this.config.cloudflareApiToken));
       return this.agentRouter();
-    } catch (error) {
-      const status = error instanceof DOMException && error.name === "TimeoutError" ? "PROVIDER_UNAVAILABLE" : "ERROR";
-      return safeHealth(provider, { configured: this.isConfigured(provider), model: this.model(provider), status, safeMessage: "The provider diagnostic could not complete safely." });
-    }
+    }catch(error){const status=error instanceof DOMException&&error.name==="TimeoutError"?"PROVIDER_UNAVAILABLE":"ERROR";return safeHealth(provider,{configured:this.isConfigured(provider),model:this.model(provider),status,safeMessage:"The provider diagnostic could not complete safely."});}
   }
-
-  async diagnoseAll(): Promise<AIProviderHealth[]> {
-    return Promise.all(aiProviderIds.map((provider) => this.diagnose(provider)));
-  }
-
-  private isConfigured(provider: DiagnosticProviderId) {
-    return Boolean(provider === "openrouter" ? this.config.openrouterApiKey : provider === "nvidia" ? this.config.nvidiaApiKey : this.config.agentRouterApiKey);
-  }
-  private model(provider: DiagnosticProviderId) {
-    return (provider === "openrouter" ? this.config.openrouterModel : provider === "nvidia" ? this.config.nvidiaModel : this.config.agentRouterModel) || null;
-  }
-
-  private async openRouter(): Promise<AIProviderHealth> {
-    const apiKey = this.config.openrouterApiKey;
-    const model = this.config.openrouterModel || "openrouter/free";
-    if (!apiKey) return safeHealth("openrouter", { model, status: "NOT_CONFIGURED" });
-    const headers = { authorization: `Bearer ${apiKey}`, "content-type": "application/json", "x-title": "Rolevana AI Diagnostics" };
-    const auth = await jsonRequest(this.fetcher, "https://openrouter.ai/api/v1/key", { headers });
-    if (!auth.response.ok) return safeHealth("openrouter", { configured: true, model, status: mapHttpStatus(auth.response.status), latencyMs: auth.latencyMs });
-
-    const metadata = await jsonRequest(this.fetcher, `https://openrouter.ai/api/v1/model/${model}`, { headers });
-    if (!metadata.response.ok) return safeHealth("openrouter", { configured: true, authenticated: true, model, status: metadata.response.status === 404 ? "MODEL_UNAVAILABLE" : mapHttpStatus(metadata.response.status), latencyMs: auth.latencyMs + metadata.latencyMs });
-    const record = (metadata.body as { data?: ModelRecord }).data;
-    if (!zeroPricing(record)) {
-      const pricingKnown = record?.pricing && record.pricing.prompt !== undefined && record.pricing.completion !== undefined;
-      return safeHealth("openrouter", { configured: true, authenticated: true, model, status: pricingKnown ? "PAID_MODEL_BLOCKED" : "FREE_MODEL_UNVERIFIED", latencyMs: auth.latencyMs + metadata.latencyMs });
-    }
-    const inference = await jsonRequest(this.fetcher, "https://openrouter.ai/api/v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model, messages: [{ role: "system", content: "Reply with exactly one token and no explanation." }, { role: "user", content: "ROLEVANA_OK" }], max_tokens: 32, temperature: 0 }) }, 25_000);
-    if (!inference.response.ok) return safeHealth("openrouter", { configured: true, authenticated: true, model, freeVerified: true, status: mapHttpStatus(inference.response.status), latencyMs: auth.latencyMs + metadata.latencyMs + inference.latencyMs });
-    const passed = responseContent(inference.body).includes("ROLEVANA_OK") || hasCompletion(inference.body);
-    return safeHealth("openrouter", { configured: true, authenticated: true, model, freeVerified: true, status: passed ? "WORKING" : "ERROR", inference: passed ? "PASS" : "FAIL", latencyMs: auth.latencyMs + metadata.latencyMs + inference.latencyMs });
-  }
-
-  private async nvidia(): Promise<AIProviderHealth> {
-    const apiKey = this.config.nvidiaApiKey;
-    const model = this.config.nvidiaModel || null;
-    if (!apiKey) return safeHealth("nvidia", { model, status: "NOT_CONFIGURED" });
-    const headers = { authorization: `Bearer ${apiKey}`, "content-type": "application/json" };
-    const models = await jsonRequest(this.fetcher, "https://integrate.api.nvidia.com/v1/models", { headers });
-    if (!models.response.ok) return safeHealth("nvidia", { configured: true, model, status: mapHttpStatus(models.response.status), latencyMs: models.latencyMs });
-    const ids = ((models.body as { data?: ModelRecord[] }).data ?? []).map((entry) => entry.id).filter((id): id is string => Boolean(id));
-    const deepSeekModels = ids.filter((id) => /deepseek/i.test(id)).slice(0, 20);
-    if (!model) return safeHealth("nvidia", { configured: true, authenticated: true, model: null, status: "AUTHENTICATED_MODEL_SELECTION_REQUIRED", latencyMs: models.latencyMs, availableModels: deepSeekModels });
-    if (!ids.includes(model)) return safeHealth("nvidia", { configured: true, authenticated: true, model, status: "MODEL_UNAVAILABLE", latencyMs: models.latencyMs, availableModels: deepSeekModels });
-    if (!splitAllowlist(this.config.nvidiaFreeModels).has(model)) return safeHealth("nvidia", { configured: true, authenticated: true, model, status: "FREE_MODEL_UNVERIFIED", latencyMs: models.latencyMs, availableModels: deepSeekModels });
-    const inference = await jsonRequest(this.fetcher, "https://integrate.api.nvidia.com/v1/chat/completions", { method: "POST", headers, body: JSON.stringify({ model, messages: [{ role: "user", content: "Return exactly: ROLEVANA_OK" }], max_tokens: 8, temperature: 0, stream: false }) }, 25_000);
-    if (!inference.response.ok) return safeHealth("nvidia", { configured: true, authenticated: true, model, freeVerified: true, status: mapHttpStatus(inference.response.status), latencyMs: models.latencyMs + inference.latencyMs, availableModels: deepSeekModels });
-    const passed = responseContent(inference.body).includes("ROLEVANA_OK") || hasCompletion(inference.body);
-    return safeHealth("nvidia", { configured: true, authenticated: true, model, freeVerified: true, status: passed ? "WORKING" : "ERROR", inference: passed ? "PASS" : "FAIL", latencyMs: models.latencyMs + inference.latencyMs, availableModels: deepSeekModels });
-  }
-
-  private agentRouter(): AIProviderHealth {
-    const configured = Boolean(this.config.agentRouterApiKey);
-    const model = this.config.agentRouterModel || null;
-    if (!configured) return safeHealth("agent-router", { model, status: "NOT_CONFIGURED" });
-    if (!model) return safeHealth("agent-router", { configured: true, model, status: "MODEL_NOT_CONFIGURED", safeMessage: "No documented Agent Router endpoint or model is configured; no network request was made." });
-    const allowlisted = splitAllowlist(this.config.agentRouterFreeModels).has(model);
-    return safeHealth("agent-router", { configured: true, model, freeVerified: allowlisted, status: "FREE_MODEL_UNVERIFIED", safeMessage: "Agent Router transport is undocumented in this repository; no potentially billable request was made." });
-  }
+  diagnoseAll(){return Promise.all(aiProviderIds.map((provider)=>this.diagnose(provider)));}
+  private isConfigured(provider:DiagnosticProviderId){if(provider==="openrouter")return Boolean(this.config.openrouterApiKey);if(provider==="nvidia")return Boolean(this.config.nvidiaApiKey);if(provider==="ovh")return Boolean(this.config.ovhBaseUrl&&this.config.ovhModel);if(provider==="llm7")return Boolean(this.config.llm7BaseUrl&&this.config.llm7Model);if(provider==="kilo")return Boolean(this.config.kiloBaseUrl&&this.config.kiloModel);if(provider==="groq")return Boolean(this.config.groqApiKey);if(provider==="gemini")return Boolean(this.config.geminiApiKey);if(provider==="cloudflare")return Boolean(this.config.cloudflareApiToken);return Boolean(this.config.agentRouterApiKey);}
+  private model(provider:DiagnosticProviderId){if(provider==="openrouter")return this.config.openrouterModel??"openrouter/free";if(provider==="nvidia")return this.config.nvidiaModel??null;if(provider==="ovh")return this.config.ovhModel??null;if(provider==="llm7")return this.config.llm7Model??null;if(provider==="kilo")return this.config.kiloModel??null;if(provider==="agent-router")return this.config.agentRouterModel??null;return null;}
+  private async openRouter(){const provider="openrouter" as const,key=this.config.openrouterApiKey,model=this.config.openrouterModel||"openrouter/free";if(!key)return safeHealth(provider,{model,status:"NOT_CONFIGURED"});const headers={authorization:`Bearer ${key}`,"content-type":"application/json","x-title":"Rolevana AI Diagnostics"};const auth=await jsonRequest(this.fetcher,"https://openrouter.ai/api/v1/key",{headers});if(!auth.response.ok)return safeHealth(provider,{configured:true,model,status:mapHttpStatus(auth.response.status),latencyMs:auth.latencyMs});const metadata=await jsonRequest(this.fetcher,`https://openrouter.ai/api/v1/model/${model}`,{headers});if(!metadata.response.ok)return safeHealth(provider,{configured:true,authenticated:true,model,status:metadata.response.status===404?"MODEL_UNAVAILABLE":mapHttpStatus(metadata.response.status),latencyMs:auth.latencyMs+metadata.latencyMs});const record=(metadata.body as {data?:ModelRecord}).data;if(!zeroPricing(record)){const known=record?.pricing?.prompt!==undefined&&record.pricing.completion!==undefined;return safeHealth(provider,{configured:true,authenticated:true,model,status:known?"PAID_MODEL_BLOCKED":"FREE_MODEL_UNVERIFIED",latencyMs:auth.latencyMs+metadata.latencyMs});}const inference=await jsonRequest(this.fetcher,"https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers,body:JSON.stringify({model,messages:[{role:"user",content:"Return exactly: ROLEVANA_OK"}],max_tokens:16,temperature:0})},25_000);if(!inference.response.ok)return safeHealth(provider,{configured:true,authenticated:true,model,freeVerified:true,status:mapHttpStatus(inference.response.status),latencyMs:auth.latencyMs+metadata.latencyMs+inference.latencyMs});const passed=responseContent(inference.body).includes("ROLEVANA_OK")||hasCompletion(inference.body);return safeHealth(provider,{configured:true,authenticated:true,model,freeVerified:true,status:passed?"WORKING":"ERROR",inference:passed?"PASS":"FAIL",latencyMs:auth.latencyMs+metadata.latencyMs+inference.latencyMs});}
+  private async nvidia(){const provider="nvidia" as const,key=this.config.nvidiaApiKey,model=this.config.nvidiaModel||null;if(!key)return safeHealth(provider,{model,status:"NOT_CONFIGURED"});const headers={authorization:`Bearer ${key}`,"content-type":"application/json"};const models=await jsonRequest(this.fetcher,"https://integrate.api.nvidia.com/v1/models",{headers});if(!models.response.ok)return safeHealth(provider,{configured:true,model,status:mapHttpStatus(models.response.status),latencyMs:models.latencyMs});const ids=((models.body as {data?:ModelRecord[]}).data??[]).map((entry)=>entry.id).filter((id):id is string=>Boolean(id));const desired=unique([...(this.config.nvidiaModels??[]),...ids.filter((id)=>/deepseek|nemotron/i.test(id)).slice(0,30)]);if(!model)return safeHealth(provider,{configured:true,authenticated:true,model:null,status:"AUTHENTICATED_MODEL_SELECTION_REQUIRED",latencyMs:models.latencyMs,availableModels:desired});if(!ids.includes(model))return safeHealth(provider,{configured:true,authenticated:true,model,status:"MODEL_UNAVAILABLE",latencyMs:models.latencyMs,availableModels:desired});if(!listSet(this.config.nvidiaFreeModels).has(model))return safeHealth(provider,{configured:true,authenticated:true,model,status:"FREE_MODEL_UNVERIFIED",latencyMs:models.latencyMs,availableModels:desired});const inference=await jsonRequest(this.fetcher,"https://integrate.api.nvidia.com/v1/chat/completions",{method:"POST",headers,body:JSON.stringify({model,messages:[{role:"user",content:"Return exactly: ROLEVANA_OK"}],max_tokens:8,temperature:0,stream:false})},25_000);if(!inference.response.ok)return safeHealth(provider,{configured:true,authenticated:true,model,freeVerified:true,status:mapHttpStatus(inference.response.status),latencyMs:models.latencyMs+inference.latencyMs,availableModels:desired});const passed=responseContent(inference.body).includes("ROLEVANA_OK")||hasCompletion(inference.body);return safeHealth(provider,{configured:true,authenticated:true,model,freeVerified:true,status:passed?"WORKING":"ERROR",inference:passed?"PASS":"FAIL",latencyMs:models.latencyMs+inference.latencyMs,availableModels:desired});}
+  private async compatible(provider:"ovh"|"llm7"|"kilo",baseUrl?:string,model?:string,freeModels?:string[],apiKey?:string,publicOnly=false){if(!baseUrl||!model)return safeHealth(provider,{model:model??null,status:"NOT_CONFIGURED",privacyClasses:privacy(publicOnly)});if(!listSet(freeModels).has(model))return safeHealth(provider,{configured:true,model,status:"FREE_MODEL_UNVERIFIED",privacyClasses:privacy(publicOnly)});const headers:Record<string,string>={"content-type":"application/json"};if(apiKey)headers.authorization=`Bearer ${apiKey}`;const catalog=await jsonRequest(this.fetcher,`${baseUrl.replace(/\/$/,"")}/models`,{headers});if(!catalog.response.ok)return safeHealth(provider,{configured:true,model,status:mapHttpStatus(catalog.response.status),latencyMs:catalog.latencyMs,privacyClasses:privacy(publicOnly)});const ids=((catalog.body as {data?:ModelRecord[]}).data??[]).map((item)=>item.id).filter((id):id is string=>Boolean(id));if(!ids.includes(model))return safeHealth(provider,{configured:true,authenticated:true,model,status:"MODEL_UNAVAILABLE",latencyMs:catalog.latencyMs,availableModels:ids.slice(0,30),privacyClasses:privacy(publicOnly)});return safeHealth(provider,{configured:true,authenticated:true,model,freeVerified:true,status:"WORKING",inference:"NOT_RUN",latencyMs:catalog.latencyMs,availableModels:ids.slice(0,30),privacyClasses:privacy(publicOnly),safeMessage:"Catalog verified; inference is deferred until an eligible public-data task runs."});}
+  private placeholder(provider:"groq"|"gemini"|"cloudflare",configured:boolean){return safeHealth(provider,{configured,status:configured?"MODEL_NOT_CONFIGURED":"NOT_CONFIGURED",safeMessage:configured?"Credential found; model and explicit free allowlist are still required.":"Future provider placeholder; environment credentials are not configured."});}
+  private agentRouter(){const configured=Boolean(this.config.agentRouterApiKey),model=this.config.agentRouterModel||null;if(!configured)return safeHealth("agent-router",{model,status:"NOT_CONFIGURED"});if(!model)return safeHealth("agent-router",{configured:true,model,status:"MODEL_NOT_CONFIGURED"});return safeHealth("agent-router",{configured:true,model,freeVerified:listSet(this.config.agentRouterFreeModels).has(model),status:"FREE_MODEL_UNVERIFIED"});}
 }
-
-export function diagnosticConfigFromEnv(source: Record<string, string | undefined>): AIProviderDiagnosticConfig {
-  const list = (value?: string) => value?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
-  return {
-    ...(source.OPENROUTER_API_KEY ? { openrouterApiKey: source.OPENROUTER_API_KEY } : {}), openrouterModel: source.OPENROUTER_MODEL || "openrouter/free",
-    ...(source.NVIDIA_API_KEY ? { nvidiaApiKey: source.NVIDIA_API_KEY } : {}), ...(source.NVIDIA_MODEL ? { nvidiaModel: source.NVIDIA_MODEL } : {}), nvidiaFreeModels: list(source.NVIDIA_FREE_MODELS),
-    ...(source.AGENT_ROUTER_API_KEY ? { agentRouterApiKey: source.AGENT_ROUTER_API_KEY } : {}), ...(source.AGENT_ROUTER_MODEL ? { agentRouterModel: source.AGENT_ROUTER_MODEL } : {}), agentRouterFreeModels: list(source.AGENT_ROUTER_FREE_MODELS),
-    freeAiOnly: source.FREE_AI_ONLY !== "false", maxAiCostUsd: Number(source.MAX_AI_COST_USD ?? 0)
-  };
-}
-
-export function sanitizeDiagnosticOutput(value: unknown): string {
-  return JSON.stringify(value, (_key, item) => typeof item === "string" && /(?:sk-|nvapi-|bearer\s)/i.test(item) ? "[REDACTED]" : item);
-}
+export function diagnosticConfigFromEnv(source:Record<string,string|undefined>):AIProviderDiagnosticConfig{const list=(value?:string)=>value?.split(",").map((item)=>item.trim()).filter(Boolean)??[];return{
+  ...(source.OPENROUTER_API_KEY?{openrouterApiKey:source.OPENROUTER_API_KEY}:{}),openrouterModel:source.OPENROUTER_MODEL||"openrouter/free",...(source.NVIDIA_API_KEY?{nvidiaApiKey:source.NVIDIA_API_KEY}:{}),...(source.NVIDIA_MODEL?{nvidiaModel:source.NVIDIA_MODEL}:{}),nvidiaModels:[source.NVIDIA_DEEPSEEK_MODEL,source.NVIDIA_CODER_MODEL,source.NVIDIA_REASONING_MODEL].filter((item):item is string=>Boolean(item)),nvidiaFreeModels:list(source.NVIDIA_FREE_MODELS),
+  ...(source.OVH_AI_BASE_URL?{ovhBaseUrl:source.OVH_AI_BASE_URL}:{}),...(source.OVH_AI_MODEL?{ovhModel:source.OVH_AI_MODEL}:{}),...(source.OVH_AI_API_KEY?{ovhApiKey:source.OVH_AI_API_KEY}:{}),ovhFreeModels:list(source.OVH_AI_FREE_MODELS),llm7BaseUrl:source.LLM7_BASE_URL||"https://api.llm7.io/v1",...(source.LLM7_MODEL?{llm7Model:source.LLM7_MODEL}:{}),llm7FreeModels:list(source.LLM7_FREE_MODELS),...(source.KILO_BASE_URL?{kiloBaseUrl:source.KILO_BASE_URL}:{}),...(source.KILO_MODEL?{kiloModel:source.KILO_MODEL}:{}),kiloFreeModels:list(source.KILO_FREE_MODELS),
+  ...(source.GROQ_API_KEY?{groqApiKey:source.GROQ_API_KEY}:{}),...(source.GOOGLE_GEMINI_API_KEY?{geminiApiKey:source.GOOGLE_GEMINI_API_KEY}:{}),...(source.CLOUDFLARE_API_TOKEN?{cloudflareApiToken:source.CLOUDFLARE_API_TOKEN}:{}),...(source.AGENT_ROUTER_API_KEY?{agentRouterApiKey:source.AGENT_ROUTER_API_KEY}:{}),...(source.AGENT_ROUTER_MODEL?{agentRouterModel:source.AGENT_ROUTER_MODEL}:{}),agentRouterFreeModels:list(source.AGENT_ROUTER_FREE_MODELS),freeAiOnly:source.FREE_AI_ONLY!=="false",maxAiCostUsd:Number(source.MAX_AI_COST_USD??0)};}
+export function sanitizeDiagnosticOutput(value:unknown){return JSON.stringify(value,(_key,item)=>typeof item==="string"&&/(?:sk-|nvapi-|bearer\s)/i.test(item)?"[REDACTED]":item);}

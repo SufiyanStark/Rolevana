@@ -9,7 +9,7 @@ export type JobAnalysis = {
 };
 
 export interface AIProvider {
-  readonly id: "mock" | "openrouter" | "nvidia" | "agent-router";
+  readonly id: "mock" | "openrouter" | "nvidia" | "ovh" | "llm7" | "kilo" | "groq" | "gemini" | "cloudflare" | "agent-router";
   readonly model: string;
   classifyJob(description: string): Promise<{ frontendRelevant: boolean; remote: boolean }>;
   classifyJobs?(jobs: AIJobClassificationInput[]): Promise<AIJobClassification[]>;
@@ -106,6 +106,30 @@ export class FreeAIProviderRouter {
   }
 }
 
+export type AITaskType = "JOB_ROLE_CLASSIFICATION" | "LOCATION_CLASSIFICATION" | "JD_EXTRACTION" | "MATCH_REASONING" | "RESUME_TAILORING" | "TRUTHFULNESS_REVIEW" | "ATS_VALIDATION";
+export type AIPrivacyClass = "PUBLIC_JOB_DATA" | "SANITIZED_CANDIDATE_DATA" | "SENSITIVE_CANDIDATE_DATA";
+export type ProviderRuntimeState = { healthy: boolean; lastSuccess?: string; lastError?: string; latencyMs?: number; retryAfter?: string; estimatedQuotaUsage?: number; cooldownUntil?: string };
+export type RoutedProviderCandidate = FreeProviderCandidate & { allowedPrivacyClasses: AIPrivacyClass[]; tasks?: AITaskType[]; capacity?: number; state?: ProviderRuntimeState };
+export class PrivacyAwareFreeAIProviderRouter {
+  private readonly active = new Map<string, number>();
+  constructor(private readonly candidates: RoutedProviderCandidate[], private readonly now: () => Date = () => new Date()) {}
+  async execute<T>(task: AITaskType, privacyClass: AIPrivacyClass, operation: ProviderOperation<T>): Promise<{ value: T; provider: string; model: string; fallbackCount: number }> {
+    let fallbackCount = 0; const reasons: FreeAIWaitStatus[] = [];
+    for (const candidate of this.candidates) {
+      if (!candidate.allowedPrivacyClasses.includes(privacyClass) || (candidate.tasks && !candidate.tasks.includes(task))) continue;
+      try { assertFreeModel(candidate); } catch { reasons.push("NO_FREE_MODEL_AVAILABLE"); fallbackCount += 1; continue; }
+      const state = candidate.state; if (state?.cooldownUntil && new Date(state.cooldownUntil) > this.now()) { reasons.push("FREE_PROVIDER_RATE_LIMITED"); fallbackCount += 1; continue; }
+      const key = `${candidate.provider.id}/${candidate.provider.model}`; const active = this.active.get(key) ?? 0;
+      if (active >= (candidate.capacity ?? 1)) { reasons.push("FREE_PROVIDER_RATE_LIMITED"); fallbackCount += 1; continue; }
+      this.active.set(key, active + 1);
+      try { const value = await operation(candidate.provider); return { value, provider: candidate.provider.id, model: candidate.provider.model, fallbackCount }; }
+      catch (error) { if (error instanceof FreeProviderUnavailableError) { reasons.push(error.status); fallbackCount += 1; continue; } throw error; }
+      finally { this.active.set(key, Math.max(0, (this.active.get(key) ?? 1) - 1)); }
+    }
+    throw new WaitingForFreeAIError([...reasons, "WAITING_FOR_FREE_AI"]);
+  }
+}
+
 export const verifiedFreePricing = (source: ModelPricing["source"] = "TRUSTED_ALLOWLIST"): ModelPricing => ({
   inputUsdPerMillionTokens: 0,
   outputUsdPerMillionTokens: 0,
@@ -195,6 +219,21 @@ export class NvidiaProvider extends PlaceholderProvider {
   async classifyJobs(jobs: AIJobClassificationInput[]) { this.assertConfigured(); return providerClassification(this.fetcher, "https://integrate.api.nvidia.com/v1/chat/completions", this.apiKey!, this.model, jobs); }
   override async classifyJob(description: string) { const [result] = await this.classifyJobs([{ jobId: "job", title: "", description, locations: [] }]); return { frontendRelevant: result?.frontendClassification === "FRONTEND" || result?.frontendClassification === "FRONTEND_HEAVY", remote: result?.remoteClassification === "REMOTE" }; }
 }
+export type NvidiaModelSlots = { deepseek: string; coder: string; reasoning: string };
+export function selectNvidiaModel(task: AITaskType, slots: NvidiaModelSlots) {
+  if (task === "JD_EXTRACTION") return slots.coder;
+  if (task === "RESUME_TAILORING" || task === "TRUTHFULNESS_REVIEW" || task === "ATS_VALIDATION") return slots.reasoning;
+  return slots.deepseek;
+}
+abstract class PublicOnlyOpenAICompatibleProvider extends PlaceholderProvider {
+  abstract readonly id: "ovh" | "llm7" | "kilo";
+  constructor(model: string, private readonly baseUrl: string, apiKey?: string, fetcher?: typeof fetch) { super(model, apiKey ?? "anonymous", fetcher); }
+  async classifyJobs(jobs: AIJobClassificationInput[]) { return providerClassification(this.fetcher, `${this.baseUrl.replace(/\/$/, "")}/chat/completions`, this.apiKey!, this.model, jobs); }
+  override async classifyJob(description: string) { const [result] = await this.classifyJobs([{ jobId:"job",title:"",description,locations:[] }]); return { frontendRelevant: result?.frontendClassification === "FRONTEND" || result?.frontendClassification === "FRONTEND_HEAVY", remote: result?.remoteClassification === "REMOTE" }; }
+}
+export class OVHProvider extends PublicOnlyOpenAICompatibleProvider { readonly id = "ovh" as const; constructor(model: string, baseUrl: string, apiKey?: string, fetcher?: typeof fetch) { super(model, baseUrl, apiKey, fetcher); } }
+export class LLM7Provider extends PublicOnlyOpenAICompatibleProvider { readonly id = "llm7" as const; constructor(model: string, baseUrl = "https://api.llm7.io/v1", fetcher?: typeof fetch) { super(model, baseUrl, undefined, fetcher); } }
+export class KiloProvider extends PublicOnlyOpenAICompatibleProvider { readonly id = "kilo" as const; constructor(model: string, baseUrl: string, fetcher?: typeof fetch) { super(model, baseUrl, undefined, fetcher); } }
 export class AgentRouterProvider extends PlaceholderProvider {
   readonly id = "agent-router" as const;
   constructor(model: string, apiKey?: string) { super(model, apiKey); }

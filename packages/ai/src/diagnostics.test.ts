@@ -47,4 +47,14 @@ describe("AI provider diagnostics", () => {
   it("sanitizes secret-looking strings from diagnostic serialization", () => {
     expect(sanitizeDiagnosticOutput({ message: "Bearer sk-secret-value" })).not.toContain("sk-secret-value");
   });
+
+  it.each(["ovh", "llm7", "kilo"] as const)("fails closed for an unconfigured %s keyless adapter", async (provider) => {
+    const result = await new AIProviderDiagnostics(diagnosticConfigFromEnv(base), vi.fn()).diagnose(provider);
+    expect(["NOT_CONFIGURED", "FREE_MODEL_UNVERIFIED"]).toContain(result.status);
+    expect(result.privacyClasses).toEqual(["PUBLIC_JOB_DATA"]);
+  });
+
+  it.each(["groq", "gemini", "cloudflare"] as const)("keeps future %s provider non-blocking", async (provider) => {
+    expect((await new AIProviderDiagnostics(diagnosticConfigFromEnv(base), vi.fn()).diagnose(provider)).status).toBe("NOT_CONFIGURED");
+  });
 });

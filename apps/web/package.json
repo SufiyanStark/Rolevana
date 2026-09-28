@@ -2,9 +2,9 @@
   "name": "@rolevana/web",
   "version": "0.1.0",
   "private": true,
-  "scripts": {"dev":"next dev --webpack","build":"next build --webpack","start":"next start","lint":"eslint . --max-warnings=0","typecheck":"tsc --noEmit","ai:doctor":"tsx scripts/ai-doctor.ts","jobs:scan":"tsx scripts/jobs-scan.ts","test:integration:jobs":"tsx scripts/jobs-scan.ts --source remote_ok"},
+  "scripts": {"dev":"next dev --webpack","build":"next build --webpack","start":"next start","lint":"eslint . --max-warnings=0","typecheck":"tsc --noEmit","ai:doctor":"tsx scripts/ai-doctor.ts","brain:dry-run":"tsx scripts/brain-dry-run.ts","jobs:scan":"tsx scripts/jobs-scan.ts","test:integration:jobs":"tsx scripts/jobs-scan.ts --source remote_ok"},
   "dependencies": {
-    "@rolevana/ai":"workspace:*","@rolevana/applications":"workspace:*","@rolevana/config":"workspace:*","@rolevana/database":"workspace:*","@rolevana/domain":"workspace:*","@rolevana/job-sources":"workspace:*","@rolevana/ui":"workspace:*",
+    "@rolevana/ai":"workspace:*","@rolevana/applications":"workspace:*","@rolevana/brain":"workspace:*","@rolevana/config":"workspace:*","@rolevana/database":"workspace:*","@rolevana/domain":"workspace:*","@rolevana/job-sources":"workspace:*","@rolevana/ui":"workspace:*",
     "@supabase/ssr":"latest","@supabase/supabase-js":"latest","lucide-react":"latest","mammoth":"1.10.0","next":"latest","pdf-parse":"1.1.1","react":"latest","react-dom":"latest","zod":"4.1.11"
   },
   "devDependencies": {"@types/node":"latest","@types/pdf-parse":"1.1.5","@types/react":"latest","@types/react-dom":"latest","eslint":"9.39.1","eslint-config-next":"latest","tailwindcss":"latest","@tailwindcss/postcss":"latest","tsx":"latest","typescript":"5.9.3"}

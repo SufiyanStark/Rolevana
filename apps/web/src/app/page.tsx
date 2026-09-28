@@ -8,18 +8,21 @@ import { readLocalProfile } from "@/lib/local-store";
 import { discoveryMetricsFromSummaries } from "@/lib/discovery";
 import { DiscoveryControls } from "@/components/discovery-controls";
 import { evaluateJobForTarget, filterJobsForTarget, humanJobStatus } from "@/lib/job-list-filter";
+import { readBrainSnapshot } from "@/lib/brain-store";
+import { BrainControls } from "@/components/brain-controls";
 
 const autopilotModes = [
-  { id: "discovery", label: "Discovery Only", description: "Find jobs matching your target. No applications.", enabled: true },
-  { id: "review", label: "Review Before Apply", description: "Queue matched jobs for your manual approval.", enabled: false },
-  { id: "auto", label: "Full Auto Apply", description: "Automatically tailor and submit applications.", enabled: false },
+  { id: "discovery", label: "Discovery Only", description: "Find jobs matching your target. No applications.", status: "Available" },
+  { id: "preparation", label: "Discovery + Preparation", description: "Score, validate, and prepare jobs in dry-run mode.", status: "Active" },
+  { id: "review", label: "Review Before Apply", description: "Queue matched jobs for your manual approval.", status: "Coming later" },
+  { id: "auto", label: "Full Auto Apply", description: "Automatically tailor and submit applications.", status: "Coming later" },
 ] as const;
 
-const pipelineSteps = ["Discover", "Target role filter", "Remote/location filter", "Experience check", "Candidate match", "Resume strategy", "Tailor if needed", "Truthfulness check", "Application method", "Apply", "Confirmation", "Tracking"];
+const pipelineSteps = ["Discover", "Target role filter", "Remote/location filter", "Experience check", "Candidate match", "Resume strategy", "Tailor if needed", "ATS validation", "Truthfulness check", "Application preparation", "Stop before submit"];
 
 export default async function Dashboard() {
   const config = publicRuntimeConfig(process.env); const user = await getSessionUser();
-  const [items, profile, sources, runs, health] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id)]) : [[], null, [], [], []];
+  const [items, profile, sources, runs, health, brain] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id), readBrainSnapshot(user.id)]) : [[], null, [], [], [], {records:[],activities:[],reviews:[],metrics:{jobsProcessedToday:0,qualifiedToday:0,matchedToday:0,resumeReadyToday:0,applicationReadyToday:0,applicationsSubmittedToday:0,emailsSentToday:0}}];
   const metrics = discoveryMetricsFromSummaries(items); const latestRun = runs[0]; const healthy = sources.filter((source) => source.lastSuccessfulScan && !source.lastError).length; const failing = sources.filter((source) => source.lastError).length;
   const targetItems = filterJobsForTarget(items, "All", profile); const remoteEligible = filterJobsForTarget(items, "Remote Eligible", profile).length; const needsClassification = filterJobsForTarget(items, "Needs Classification", profile).length;
   const cards = [["Discovered today",metrics.jobsDiscoveredToday,"Real public listings",Radar],["New in last hour",metrics.newLastHour,"By discovery time",Clock3],["Remote eligible",remoteEligible,"Target role + region",ShieldCheck],["Needs classification",needsClassification,"Never discarded",TriangleAlert]] as const;
@@ -27,12 +30,16 @@ export default async function Dashboard() {
   return <div className="space-y-7">
     <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div>
-        <Badge className="mb-4 border-cyan-300/20 bg-cyan-300/10 text-cyan-200">Phase 2 · Discovery</Badge>
+        <Badge className="mb-4 border-cyan-300/20 bg-cyan-300/10 text-cyan-200">Phase 3A · Rolevana Brain</Badge>
         <h1 className="m-0 max-w-3xl text-3xl font-semibold tracking-[-.04em] md:text-5xl">{profile?.primaryTargetRoleTitle ? <>{profile.primaryTargetRoleTitle} roles,<br/><span className="text-slate-500">found without applying.</span></> : <>Remote roles,<br/><span className="text-slate-500">found without applying.</span></>}</h1>
         <p className="mt-4 max-w-xl text-sm leading-6 text-slate-400">Public job feeds and ATS boards are filtered remote-first. Applications and email remain fully disabled.</p>
       </div>
       <DiscoveryControls/>
     </section>
+
+    <Card className="p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Bot size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Rolevana Brain / Autopilot</h2></div><p className="mt-1 text-xs text-slate-500">Discovery + Preparation · dry run only</p></div><BrainControls/></div><dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5"><div><dt className="text-slate-500">Target</dt><dd className="m-0 font-medium">{profile?.primaryTargetRoleTitle||"Not set"}</dd></div><div><dt className="text-slate-500">Worker concurrency</dt><dd className="m-0 font-medium">{config.workerConcurrency}</dd></div><div><dt className="text-slate-500">Hourly processing goal</dt><dd className="m-0 font-medium">{config.hourlyProcessingTarget}</dd></div><div><dt className="text-slate-500">Daily future goal</dt><dd className="m-0 font-medium">{config.dailyApplicationTarget}</dd></div><div><dt className="text-slate-500">Providers healthy</dt><dd className="m-0 font-medium">{health.filter((item)=>item.status==="WORKING").length} / {health.length||9}</dd></div></dl><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{[["Processed today",brain.metrics.jobsProcessedToday],["Qualified today",brain.metrics.qualifiedToday],["Resume-ready",brain.metrics.resumeReadyToday],["Application-ready",brain.metrics.applicationReadyToday],["Applications submitted",0]].map(([label,value])=><div className="rounded-lg bg-white/[.03] p-3" key={label}><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-xl font-semibold">{value}</div></div>)}</div></Card>
+
+    <Card className="overflow-hidden"><div className="border-b border-white/[.07] p-5"><h2 className="m-0 text-base font-semibold">Agent Activity</h2><p className="mb-0 mt-1 text-xs text-slate-500">Persisted worker state; no simulated activity.</p></div>{Array.from({length:config.workerConcurrency},(_,index)=>brain.activities.find((item)=>item.workerId===index+1)??{workerId:index+1,jobId:null,jobTitle:null,company:null,state:"IDLE"}).map((activity)=><div className="flex items-center justify-between border-b border-white/[.05] px-5 py-3 last:border-0" key={activity.workerId}><div><div className="text-sm font-medium">Worker {activity.workerId}</div><div className="text-xs text-slate-500">{activity.jobTitle?`${activity.jobTitle} · ${activity.company}`:"Idle"}</div></div><Badge>{activity.state.replace(/_/g," ")}</Badge></div>)}</Card>
 
     {/* Status panel */}
     <Card className="overflow-hidden"><div className="grid gap-px bg-white/[.06] md:grid-cols-3">
@@ -49,15 +56,15 @@ export default async function Dashboard() {
       <Card className="p-0 overflow-hidden">
         <div className="border-b border-white/[.07] p-5">
           <div className="flex items-center gap-2"><Rocket size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Autopilot</h2></div>
-          <p className="mb-0 mt-1 text-xs text-slate-500">Current mode: Discovery Only · Application engine not enabled yet.</p>
+          <p className="mb-0 mt-1 text-xs text-slate-500">Current mode: Discovery + Preparation · submissions remain disabled.</p>
         </div>
         <div className="grid gap-px bg-white/[.06]">
-          {autopilotModes.map((mode) => <div className={`flex items-center justify-between bg-slate-900 px-5 py-4 ${!mode.enabled ? "opacity-50" : ""}`} key={mode.id}>
+          {autopilotModes.map((mode) => <div className={`flex items-center justify-between bg-slate-900 px-5 py-4 ${mode.status === "Coming later" ? "opacity-50" : ""}`} key={mode.id}>
             <div>
-              <div className="flex items-center gap-2"><span className={`inline-block size-2 rounded-full ${mode.enabled ? "bg-emerald-400" : "bg-slate-600"}`}/><span className="text-sm font-semibold">{mode.label}</span></div>
+              <div className="flex items-center gap-2"><span className={`inline-block size-2 rounded-full ${mode.status === "Active" ? "bg-emerald-400" : mode.status === "Available" ? "bg-cyan-400" : "bg-slate-600"}`}/><span className="text-sm font-semibold">{mode.label}</span></div>
               <div className="ml-4 mt-0.5 text-xs text-slate-500">{mode.description}</div>
             </div>
-            <Badge className={mode.enabled ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200" : "border-white/10 text-slate-500"}>{mode.enabled ? "Active" : "Coming soon"}</Badge>
+            <Badge className={mode.status === "Active" ? "border-emerald-300/20 bg-emerald-300/10 text-emerald-200" : "border-white/10 text-slate-500"}>{mode.status}</Badge>
           </div>)}
         </div>
         <div className="border-t border-white/[.07] p-5">
@@ -69,7 +76,7 @@ export default async function Dashboard() {
       <Card className="p-5">
         <div className="flex items-center gap-2 mb-5"><Target size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">Target configuration</h2></div>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
-          <dt className="text-slate-500">Autopilot mode</dt><dd className="m-0 text-right font-medium">Discovery Only</dd>
+          <dt className="text-slate-500">Autopilot mode</dt><dd className="m-0 text-right font-medium">Discovery + Preparation</dd>
           <dt className="text-slate-500">Target role</dt><dd className="m-0 text-right font-medium text-cyan-200">{profile?.primaryTargetRoleTitle || "Not set"}</dd>
           <dt className="text-slate-500">Role category</dt><dd className="m-0 text-right">{profile?.primaryTargetRoleCategory?.replace(/_/g, " ") ?? "—"}</dd>
           <dt className="text-slate-500">Experience</dt><dd className="m-0 text-right">{profile?.totalYearsExperience ?? 0} years (±{profile?.experienceToleranceYears ?? 1}y tolerance)</dd>

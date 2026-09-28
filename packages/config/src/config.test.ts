@@ -8,6 +8,9 @@ describe("environment", () => {
     expect(env.FREE_INFRA_MODE).toBe(true);
     expect(env.MAX_AI_COST_USD).toBe(0);
     expect(env.OPENROUTER_MODEL).toBe("openrouter/free");
+    expect(env.ROLEVANA_WORKER_CONCURRENCY).toBe(5);
+    expect(env.TARGET_APPLICATIONS_PER_HOUR).toBe(10);
+    expect(env.MINIMUM_MATCH_SCORE).toBe(75);
   });
   it("rejects a non-zero AI budget in free-only mode", () => expect(() => parseEnv({ MAX_AI_COST_USD: "0.01" })).toThrow());
   it("rejects unsafe scan rates", () => expect(() => parseEnv({ JOB_SCAN_INTERVAL_MINUTES: "1" })).toThrow());

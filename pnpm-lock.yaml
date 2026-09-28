@@ -26,6 +26,9 @@ importers:
       '@rolevana/applications':
         specifier: workspace:*
         version: link:../../packages/applications
+      '@rolevana/brain':
+        specifier: workspace:*
+        version: link:../../packages/brain
       '@rolevana/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -107,6 +110,19 @@ importers:
         version: 5.9.3
 
   packages/applications:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/brain:
+    dependencies:
+      '@rolevana/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@rolevana/job-sources':
+        specifier: workspace:*
+        version: link:../job-sources
     devDependencies:
       typescript:
         specifier: 5.9.3
