@@ -1,4 +1,4 @@
-import { createEmptyCandidateProfile, type CandidateProfile, type ExtractedField, type ParsedResumeData } from "./index";
+import { createEmptyCandidateProfile, initializeTargetRole, type CandidateProfile, type ExtractedField, type ParsedResumeData } from "./index";
 
 export type ProfileMergeConflict = {
   field: string;
@@ -84,5 +84,5 @@ export function mergeResumeIntoCandidateProfile(current: CandidateProfile | null
     fieldsAdded, skillsAdded, experienceAdded: collectionCounts.experience, projectsAdded: collectionCounts.projects,
     educationAdded: collectionCounts.education, conflicts: conflicts.length, reviewRequired: conflicts.length > 0
   };
-  return { profile, conflicts, summary };
+  return { profile: initializeTargetRole(profile), conflicts, summary };
 }

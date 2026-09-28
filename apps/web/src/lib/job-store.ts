@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getLocalDataDirectory } from "./local-store";
-import { classifyRoleCategory, extractExperienceRequirement, parseSupportedBoardUrl, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider, type JobSourceRegistryRecord, type NormalizedJob, type RemoteRegion, type Seniority, type SourceRunSummary, type WorkplaceType } from "@rolevana/job-sources";
+import { classifyRoleCategory, extractExperienceRequirement, normalizeRemoteRegions, parseSupportedBoardUrl, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider, type JobSourceRegistryRecord, type NormalizedJob, type RemoteRegion, type Seniority, type SourceRunSummary, type WorkplaceType } from "@rolevana/job-sources";
 import type { AIJobClassification, AIProviderHealth } from "@rolevana/ai";
 
 const safeUserId = (userId: string) => userId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -17,6 +17,8 @@ const writeJson = async (file: string, value: unknown) => {
 const registryFile = (userId: string) => path.join(directoryFor(userId), "job-sources.json");
 const jobsFile = (userId: string) => path.join(directoryFor(userId), "jobs.json");
 const jobsIndexFile = (userId: string) => path.join(directoryFor(userId), "jobs-index.json");
+const jobDetailsDirectory = (userId: string) => path.join(directoryFor(userId), "job-details");
+const jobDetailFile = (userId: string, id: string) => path.join(jobDetailsDirectory(userId), `${id.replace(/[^a-zA-Z0-9_-]/g, "_")}.json`);
 const runsFile = (userId: string) => path.join(directoryFor(userId), "job-source-runs.json");
 const healthFile = (userId: string) => path.join(directoryFor(userId), "ai-provider-health.json");
 const classificationFile = (userId: string) => path.join(directoryFor(userId), "job-classification-cache.json");
@@ -67,8 +69,11 @@ type SerializedJob = Omit<NormalizedJob, "postedAt" | "updatedAt" | "discoveredA
 const hydrateJob = (raw: SerializedJob): NormalizedJob => {
   const { postedAt, updatedAt, discoveredAt, lastSeenAt, ...rest } = raw;
   const experience = extractExperienceRequirement(rest.title, rest.description);
+  const invalidStoredExperience = rest.maximumYearsExperience !== undefined && (rest.maximumYearsExperience > 30 || (rest.minimumYearsExperience !== undefined && rest.minimumYearsExperience > rest.maximumYearsExperience));
   return {
     ...rest,
+    ...(invalidStoredExperience ? { minimumYearsExperience: experience.minimumYearsExperience, maximumYearsExperience: experience.maximumYearsExperience } : {}),
+    remoteRegions: rest.remoteRegions.includes("UNKNOWN") ? normalizeRemoteRegions(rest.locations.join(" "), rest.locationRestrictions.join(" ")) : rest.remoteRegions,
     roleCategory: rest.roleCategory ?? classifyRoleCategory(rest.title),
     seniority: rest.seniority ?? experience.seniority,
     ...(rest.minimumYearsExperience === undefined && experience.minimumYearsExperience !== undefined ? { minimumYearsExperience: experience.minimumYearsExperience } : {}),
@@ -82,19 +87,31 @@ const hydrateJob = (raw: SerializedJob): NormalizedJob => {
 
 export type JobListItem = {
   id: string; title: string; companyName: string; source: JobSourceProvider; roleCategory: string; regions: RemoteRegion[]; freshness: FreshnessBucket;
-  workplaceType: WorkplaceType; status: DiscoveryStatus; postedAt: Date | null; discoveredAt: Date; seniority: Seniority; minimumYearsExperience: number | null;
+  workplaceType: WorkplaceType; status: DiscoveryStatus; postedAt: Date | null; discoveredAt: Date; seniority: Seniority; minimumYearsExperience: number | null; maximumYearsExperience: number | null;
   duplicateSources: number; frontendClassification: NormalizedJob["frontendClassification"];
 };
 type SerializedJobListItem = Omit<JobListItem, "postedAt" | "discoveredAt"> & { postedAt: string | null; discoveredAt: string };
-const jobListItem = (job: NormalizedJob): JobListItem => ({ id: job.id ?? job.descriptionHash, title: job.title, companyName: job.companyName, source: job.source, roleCategory: job.roleCategory ?? classifyRoleCategory(job.title), regions: job.remoteRegions, freshness: job.freshness, workplaceType: job.workplaceType, status: job.status, postedAt: job.postedAt ?? null, discoveredAt: job.discoveredAt, seniority: job.seniority ?? extractExperienceRequirement(job.title, job.description).seniority, minimumYearsExperience: job.minimumYearsExperience ?? null, duplicateSources: job.sourceReferences.length, frontendClassification: job.frontendClassification });
-const saveJobIndex = (userId: string, jobs: NormalizedJob[]) => writeJson(jobsIndexFile(userId), jobs.map(jobListItem));
+type SerializedJobIndex = { version: 4; items: SerializedJobListItem[] };
+const jobListItem = (job: NormalizedJob): JobListItem => ({ id: job.id ?? job.descriptionHash, title: job.title, companyName: job.companyName, source: job.source, roleCategory: job.roleCategory ?? classifyRoleCategory(job.title), regions: job.remoteRegions, freshness: job.freshness, workplaceType: job.workplaceType, status: job.status, postedAt: job.postedAt ?? null, discoveredAt: job.discoveredAt, seniority: job.seniority ?? extractExperienceRequirement(job.title, job.description).seniority, minimumYearsExperience: job.minimumYearsExperience ?? null, maximumYearsExperience: job.maximumYearsExperience ?? null, duplicateSources: job.sourceReferences.length, frontendClassification: job.frontendClassification });
+const serializedJobListItem = (job: JobListItem): SerializedJobListItem => ({ ...job, postedAt: job.postedAt?.toISOString() ?? null, discoveredAt: job.discoveredAt.toISOString() });
+const saveJobIndex = (userId: string, jobs: NormalizedJob[]) => writeJson(jobsIndexFile(userId), { version: 4, items: jobs.map(jobListItem).map(serializedJobListItem) } satisfies SerializedJobIndex);
 
 export async function readLocalJobSummaries(userId: string): Promise<JobListItem[]> {
-  const raw = await readJson<SerializedJobListItem[]>(jobsIndexFile(userId), []);
+  const index = await readJson<SerializedJobIndex | SerializedJobListItem[]>(jobsIndexFile(userId), []);
+  const raw = !Array.isArray(index) && index.version === 4 ? index.items : [];
   if (raw.length) return raw.map((item) => ({ ...item, postedAt: item.postedAt ? new Date(item.postedAt) : null, discoveredAt: new Date(item.discoveredAt) }));
   const jobs = await readLocalJobs(userId);
   await saveJobIndex(userId, jobs);
   return jobs.map(jobListItem);
+}
+
+export async function readLocalJobById(userId: string, id: string): Promise<NormalizedJob | null> {
+  const cached = await readJson<SerializedJob | null>(jobDetailFile(userId, id), null);
+  if (cached) return hydrateJob(cached);
+  const jobs = await readLocalJobs(userId);
+  const job = jobs.find((item) => (item.id ?? item.descriptionHash) === id) ?? null;
+  if (job) await writeJson(jobDetailFile(userId, id), job);
+  return job;
 }
 
 export async function readLocalJobs(userId: string): Promise<NormalizedJob[]> {
@@ -114,7 +131,7 @@ export async function upsertLocalJobs(userId: string, incoming: NormalizedJob[])
     existing[index] = { ...current, ...candidate, id: current.id ?? randomUUID(), discoveredAt: current.discoveredAt, lastSeenAt: candidate.lastSeenAt, sourceReferences: references };
     updated += 1;
   }
-  await Promise.all([writeJson(jobsFile(userId), existing), saveJobIndex(userId, existing)]);
+  await Promise.all([writeJson(jobsFile(userId), existing), saveJobIndex(userId, existing), ...existing.map((job) => writeJson(jobDetailFile(userId, job.id ?? job.descriptionHash), job))]);
   return { jobs: existing, created, updated, duplicates };
 }
 

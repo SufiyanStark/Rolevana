@@ -7,6 +7,7 @@ import { readAIProviderHealth, readJobSourceRegistry, readLocalJobSummaries, rea
 import { readLocalProfile } from "@/lib/local-store";
 import { discoveryMetricsFromSummaries } from "@/lib/discovery";
 import { DiscoveryControls } from "@/components/discovery-controls";
+import { evaluateJobForTarget, filterJobsForTarget, humanJobStatus } from "@/lib/job-list-filter";
 
 const autopilotModes = [
   { id: "discovery", label: "Discovery Only", description: "Find jobs matching your target. No applications.", enabled: true },
@@ -20,7 +21,8 @@ export default async function Dashboard() {
   const config = publicRuntimeConfig(process.env); const user = await getSessionUser();
   const [items, profile, sources, runs, health] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id)]) : [[], null, [], [], []];
   const metrics = discoveryMetricsFromSummaries(items); const latestRun = runs[0]; const healthy = sources.filter((source) => source.lastSuccessfulScan && !source.lastError).length; const failing = sources.filter((source) => source.lastError).length;
-  const cards = [["Discovered today",metrics.jobsDiscoveredToday,"Real public listings",Radar],["New in last hour",metrics.newLastHour,"By discovery time",Clock3],["Remote eligible",metrics.remoteEligible,"Target role + region",ShieldCheck],["Needs classification",metrics.needsClassification,"Never discarded",TriangleAlert]] as const;
+  const targetItems = filterJobsForTarget(items, "All", profile); const remoteEligible = filterJobsForTarget(items, "Remote Eligible", profile).length; const needsClassification = filterJobsForTarget(items, "Needs Classification", profile).length;
+  const cards = [["Discovered today",metrics.jobsDiscoveredToday,"Real public listings",Radar],["New in last hour",metrics.newLastHour,"By discovery time",Clock3],["Remote eligible",remoteEligible,"Target role + region",ShieldCheck],["Needs classification",needsClassification,"Never discarded",TriangleAlert]] as const;
 
   return <div className="space-y-7">
     <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
@@ -87,10 +89,10 @@ export default async function Dashboard() {
           <div><h2 className="m-0 text-base font-semibold">Fresh jobs</h2><p className="mb-0 mt-1 text-xs text-slate-500">Newest known posted date first</p></div>
           <Button asChild variant="ghost" size="sm"><Link href="/jobs">View all <ArrowUpRight size={14}/></Link></Button>
         </div>
-        {items.slice(0,6).map((item)=><Link className="block border-b border-white/[.05] px-5 py-4 last:border-0 hover:bg-white/[.02]" href={`/jobs/${item.id}`} key={item.id}>
-          <div className="flex items-center justify-between gap-4"><div><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.companyName} · {item.source} · {item.regions.join(", ")}</div></div><Badge>{item.status}</Badge></div>
+        {targetItems.slice(0,6).map((item)=><Link className="block border-b border-white/[.05] px-5 py-4 last:border-0 hover:bg-white/[.02]" href={`/jobs/${item.id}`} key={item.id}>
+          <div className="flex items-center justify-between gap-4"><div><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.companyName} · {item.source} · {item.regions.join(", ")}</div></div><Badge>{profile ? humanJobStatus(evaluateJobForTarget(item, profile).status, evaluateJobForTarget(item, profile).experienceEligible) : "Discovered"}</Badge></div>
         </Link>)}
-        {!items.length&&<div className="p-8 text-center text-sm text-slate-500">Run a scan to discover real jobs.</div>}
+        {!targetItems.length&&<div className="p-8 text-center text-sm text-slate-500">No matching {profile?.primaryTargetRoleTitle ?? "target-role"} jobs found in your current sources.</div>}
       </Card>
       <div className="space-y-5">
         <Card className="p-5"><div className="flex items-center gap-2"><Bot size={18} className="text-cyan-300"/><h2 className="m-0 text-base font-semibold">AI providers</h2></div><div className="mt-4 space-y-3">{["openrouter","nvidia","agent-router"].map((provider)=>{const item=health.find((entry)=>entry.provider===provider);return <div className="flex items-center justify-between text-sm" key={provider}><span className="capitalize text-slate-400">{provider.replace("-"," ")}</span><Badge>{item?.status??"NOT TESTED"}</Badge></div>;})}</div></Card>

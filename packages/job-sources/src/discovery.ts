@@ -5,18 +5,21 @@ export type DiscoveryScanResult = { jobs: NormalizedJob[]; runs: SourceRunSummar
 
 export function filterDiscoveredJob(job: NormalizedJob, allowedRegions: string[], target?: JobTargetPreferences): NormalizedJob {
   if (job.workplaceType === "HYBRID" || job.workplaceType === "ONSITE") return { ...job, status: "REJECTED_NOT_REMOTE", classificationReason: `${job.workplaceType} jobs are blocked by the remote-only preference.` };
-  if (job.workplaceType === "UNKNOWN") return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "Workplace type requires classification." };
-  const regionEligible = isRegionEligible(job.remoteRegions, allowedRegions);
-  if (regionEligible === false) return { ...job, status: "REJECTED_LOCATION", classificationReason: "The explicit remote geography is outside the candidate's allowed regions." };
   if (target) {
     const roleMatch = roleMatchesTarget(job.title, job.roleCategory, target.selectedRoleTitle, target.roleCategory, target.relatedTitles, target.includeRelatedTitles);
     if (roleMatch === false) return { ...job, status: "REJECTED_TARGET_ROLE", classificationReason: `The role does not match the selected ${target.selectedRoleTitle} target.` };
     if (roleMatch === null) return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "The broad job title needs target-role classification." };
+    if (job.workplaceType === "UNKNOWN") return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "The target role matches, but workplace type is genuinely unknown." };
+    const regionEligible = isRegionEligible(job.remoteRegions, allowedRegions);
+    if (regionEligible === false) return { ...job, status: "REJECTED_LOCATION", classificationReason: "The explicit remote geography is outside the candidate's allowed regions." };
     const experience = experienceCompatibility(target.candidateYearsExperience, job.minimumYearsExperience, target.experienceToleranceYears);
     if (experience === "MAJOR_MISMATCH") return { ...job, status: "REJECTED_EXPERIENCE", classificationReason: `The role requires substantially more than ${target.candidateYearsExperience} years of experience.` };
     if (regionEligible === null) return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "Remote geography needs classification." };
     return { ...job, status: "QUALIFIED_BY_FILTER", classificationReason: experience === "SLIGHTLY_ABOVE" ? "Target role match; experience requirement is slightly above the preference." : "Target role, location, and experience filters passed deterministically." };
   }
+  if (job.workplaceType === "UNKNOWN") return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "Workplace type requires classification." };
+  const regionEligible = isRegionEligible(job.remoteRegions, allowedRegions);
+  if (regionEligible === false) return { ...job, status: "REJECTED_LOCATION", classificationReason: "The explicit remote geography is outside the candidate's allowed regions." };
   if (job.frontendClassification === "NOT_FRONTEND") return { ...job, status: "REJECTED_ROLE" };
   if (regionEligible === null || job.frontendClassification === "AMBIGUOUS") return { ...job, status: "NEEDS_CLASSIFICATION" };
   return { ...job, status: "QUALIFIED_BY_FILTER" };

@@ -67,6 +67,7 @@ export const candidateProfileSchema = z.object({
   timezoneFlexibility: z.string().max(1000).default(""),
   primaryTargetRoleTitle: z.string().trim().max(120).default(""),
   primaryTargetRoleCategory: z.enum(roleCategories).default("OTHER"),
+  targetRoleSelectionSource: z.enum(["RESUME", "USER"]).default("RESUME"),
   secondaryTargetRoles: z.array(z.string().trim().min(1).max(120)).default([]),
   includeRelatedTitles: z.boolean().default(true),
   experienceToleranceYears: z.number().int().min(0).max(10).default(1),
@@ -88,12 +89,12 @@ export const createEmptyCandidateProfile = (): CandidateProfile => ({
   totalYearsExperience: 0, noticePeriod: "", currentCompensation: "", expectedCompensation: "",
   preferredSalaryRange: "", currency: "INR", employmentTypes: ["FULL_TIME"], remoteOnly: true,
   allowedRegions: ["India", "Worldwide", "APAC"], workAuthorization: "", sponsorshipRequired: "UNKNOWN",
-  relocationWillingness: "CASE_BY_CASE", timezoneFlexibility: "", primaryTargetRoleTitle: "", primaryTargetRoleCategory: "OTHER", secondaryTargetRoles: [], includeRelatedTitles: true, experienceToleranceYears: 1, minimumSeniority: "UNKNOWN", maximumSeniority: "UNKNOWN", skills: [], experience: [], projects: [], education: []
+  relocationWillingness: "CASE_BY_CASE", timezoneFlexibility: "", primaryTargetRoleTitle: "", primaryTargetRoleCategory: "OTHER", targetRoleSelectionSource: "RESUME", secondaryTargetRoles: [], includeRelatedTitles: true, experienceToleranceYears: 1, minimumSeniority: "UNKNOWN", maximumSeniority: "UNKNOWN", skills: [], experience: [], projects: [], education: []
 });
 
 export function initializeTargetRole<T extends CandidateProfile>(profile: T): T {
   if (profile.primaryTargetRoleTitle || !profile.currentRole.trim()) return profile;
-  return { ...profile, ...targetRoleDefaults(profile.currentRole) };
+  return { ...profile, ...targetRoleDefaults(profile.currentRole), targetRoleSelectionSource: "RESUME" };
 }
 
 export const resumeParsingStatuses = ["UPLOADED", "EXTRACTING_TEXT", "PARSING", "WAITING_FOR_FREE_AI", "PARSED", "REVIEW_REQUIRED", "VERIFIED", "FAILED"] as const;

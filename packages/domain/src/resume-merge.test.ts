@@ -12,6 +12,17 @@ describe("resume profile merge", () => {
     expect(result.summary).toMatchObject({ fieldsAdded: 2, conflicts: 0 });
   });
 
+  it("initializes the target role once from a parsed current role", () => {
+    const result = mergeResumeIntoCandidateProfile(profile(), parsed({ career: { currentRole: field("Frontend Engineer") } }));
+    expect(result.profile).toMatchObject({ primaryTargetRoleTitle: "Frontend Engineer", primaryTargetRoleCategory: "FRONTEND_ENGINEERING", targetRoleSelectionSource: "RESUME" });
+  });
+
+  it("never overwrites an explicit target role during a later resume merge", () => {
+    const current = profile({ currentRole: "Frontend Engineer", primaryTargetRoleTitle: "QA Engineer", primaryTargetRoleCategory: "QA_SDET", targetRoleSelectionSource: "USER" });
+    const result = mergeResumeIntoCandidateProfile(current, parsed({ career: { currentRole: field("Backend Engineer") } }));
+    expect(result.profile).toMatchObject({ primaryTargetRoleTitle: "QA Engineer", primaryTargetRoleCategory: "QA_SDET", targetRoleSelectionSource: "USER" });
+  });
+
   it("treats an identical existing value as verified and not conflicting", () => {
     const result = mergeResumeIntoCandidateProfile(profile({ fullName: "Sufiyan Ahmed" }), parsed({ personal: { fullName: field("  sufiyan ahmed ") } }));
     expect(result.profile.fullName).toBe("Sufiyan Ahmed");

@@ -47,6 +47,7 @@ export async function readLocalProfile(userId: string): Promise<CandidateProfile
   }
   if (!value) return null;
   const normalized = initializeTargetRole({ ...createEmptyCandidateProfile(), ...value } as CandidateProfile);
+  if (!value.primaryTargetRoleTitle && normalized.primaryTargetRoleTitle) await writeJsonAtomic(paths.profile, normalized);
   developmentLog("PROFILE_LOADED", { userId, skills: normalized.skills.length, experience: normalized.experience.length, projects: normalized.projects.length, education: normalized.education.length });
   return normalized;
 }

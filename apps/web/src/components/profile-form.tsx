@@ -1,65 +1,16 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card } from "@rolevana/ui";
-import { Check, ChevronDown, FileUp, LoaderCircle, Plus, Save, Search, ShieldCheck, X } from "lucide-react";
-import type { CandidateProfile, MasterResume, ProfileMergeSummary, RoleCatalogEntry } from "@rolevana/domain";
-import { searchRoleCatalog, roleCategories } from "@rolevana/domain";
+import { Check, FileUp, LoaderCircle, Plus, Save, ShieldCheck, X } from "lucide-react";
+import type { CandidateProfile, MasterResume, ProfileMergeSummary } from "@rolevana/domain";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { profileAfterResumeUpload } from "@/lib/profile-form-state";
+import { RoleDropdown } from "@/components/role-dropdown";
+import { PageSkeleton } from "@/components/page-skeleton";
 
 type FormState = "idle" | "saving" | "saved" | "error";
 const sections = ["Personal", "Career", "Preferences", "Skills", "Experience", "Resume"];
-
-function RoleDropdown({ value, category, onChange }: { value: string; category: string; onChange: (title: string, category: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<RoleCatalogEntry[]>([]);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { setResults(searchRoleCatalog(query || value, 15)); }, [query, value]);
-  useEffect(() => {
-    const handler = (event: MouseEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const select = useCallback((entry: RoleCatalogEntry) => { onChange(entry.title, entry.category); setQuery(""); setOpen(false); }, [onChange]);
-  const selectCustom = useCallback(() => {
-    if (!query.trim()) return;
-    const match = searchRoleCatalog(query, 1)[0];
-    onChange(query.trim(), match?.category ?? "OTHER");
-    setOpen(false);
-    setQuery("");
-  }, [query, onChange]);
-
-  return <div className="field relative" ref={ref}>
-    <label>Target role</label>
-    <div className="relative">
-      <button type="button" className="control flex w-full items-center justify-between gap-2 text-left" onClick={() => setOpen(!open)}>
-        <span className={value ? "" : "text-slate-500"}>{value || "Select target role…"}</span>
-        <ChevronDown size={14} className="shrink-0 text-slate-500"/>
-      </button>
-    </div>
-    {open && <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-white/10 bg-slate-900 shadow-2xl shadow-black/40">
-      <div className="flex items-center gap-2 border-b border-white/[.06] px-3 py-2">
-        <Search size={14} className="text-slate-500"/>
-        <input className="w-full border-0 bg-transparent text-sm text-white outline-none placeholder:text-slate-500" placeholder="Search roles or type custom…" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); const top = results[0]; top ? select(top) : selectCustom(); }}} autoFocus/>
-      </div>
-      <div className="max-h-64 overflow-y-auto py-1">
-        {results.map((entry) => <button type="button" className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition hover:bg-white/[.05] ${entry.title === value ? "bg-cyan-300/10 text-cyan-200" : "text-slate-300"}`} key={entry.title} onClick={() => select(entry)}>
-          <span>{entry.title}</span>
-          <span className="text-[10px] text-slate-500">{entry.category.replace(/_/g, " ")}</span>
-        </button>)}
-        {query.trim() && !results.some((r) => r.title.toLowerCase() === query.trim().toLowerCase()) && <button type="button" className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-cyan-300 transition hover:bg-white/[.05]" onClick={selectCustom}>
-          <Plus size={14}/> Use custom: "{query.trim()}"
-        </button>}
-        {!results.length && !query.trim() && <div className="px-3 py-4 text-center text-xs text-slate-500">Type to search roles</div>}
-      </div>
-    </div>}
-    {value && <div className="mt-1 text-[10px] text-slate-500">Category: {category.replace(/_/g, " ")}</div>}
-  </div>;
-}
 
 export function ProfileForm() {
   const router = useRouter();
@@ -73,12 +24,15 @@ export function ProfileForm() {
   const [mergeInfo, setMergeInfo] = useState<ProfileMergeSummary>();
   const [targetRole, setTargetRole] = useState("");
   const [targetCategory, setTargetCategory] = useState("OTHER");
+  const [targetRoleSelectionSource, setTargetRoleSelectionSource] = useState<CandidateProfile["targetRoleSelectionSource"]>("RESUME");
+  const [loaded, setLoaded] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   function showProfile(next: CandidateProfile) {
     setProfile(next); setSkills(next.skills.map((skill) => skill.name));
     setTargetRole(next.primaryTargetRoleTitle ?? "");
     setTargetCategory(next.primaryTargetRoleCategory ?? "OTHER");
+    setTargetRoleSelectionSource(next.targetRoleSelectionSource ?? "RESUME");
     for (const [name, value] of Object.entries(next)) {
       const input = formRef.current?.elements.namedItem(name);
       if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement || input instanceof HTMLSelectElement) input.value = String(value ?? "");
@@ -90,7 +44,7 @@ export function ProfileForm() {
     const resumeData = await resumeResponse.json() as { resume?: MasterResume };
     if (profileData.profile) showProfile(profileData.profile);
     if (resumeData.resume) { setResumeInfo(resumeData.resume); setResumeName(resumeData.resume.originalFileName); }
-  }).catch(() => setState("error")); }, []);
+  }).catch(() => setState("error")).finally(() => setLoaded(true)); }, []);
 
   async function saveProfile() {
     if (!formRef.current) return;
@@ -103,6 +57,7 @@ export function ProfileForm() {
       employmentTypes: profile?.employmentTypes ?? ["FULL_TIME"], remoteOnly: true, allowedRegions: profile?.allowedRegions ?? ["India", "Worldwide", "APAC"], workAuthorization: data.get("workAuthorization") ?? "", sponsorshipRequired: data.get("sponsorshipRequired") ?? "UNKNOWN", relocationWillingness: profile?.relocationWillingness ?? "CASE_BY_CASE", timezoneFlexibility: data.get("timezoneFlexibility") ?? "",
       primaryTargetRoleTitle: targetRole,
       primaryTargetRoleCategory: targetCategory,
+      targetRoleSelectionSource,
       secondaryTargetRoles: profile?.secondaryTargetRoles ?? [],
       includeRelatedTitles: profile?.includeRelatedTitles ?? true,
       experienceToleranceYears: profile?.experienceToleranceYears ?? 1,
@@ -129,6 +84,7 @@ export function ProfileForm() {
 
   const addSkill = () => { const value = skillDraft.trim(); if (value && !skills.includes(value)) setSkills([...skills, value]); setSkillDraft(""); };
 
+  if (!loaded) return <PageSkeleton kind="form"/>;
   return <form ref={formRef} onSubmit={(event) => { event.preventDefault(); void saveProfile(); }}>
     <div className="mb-7 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><Badge className="mb-3 border-cyan-300/20 text-cyan-200">Source of truth</Badge><h1 className="m-0 text-3xl font-semibold tracking-[-.03em]">Candidate profile</h1><p className="mb-0 mt-2 max-w-2xl text-sm text-slate-400">Rolevana uses only information you verify here. Unknown details are always routed for review.</p></div><Button type="submit" disabled={state === "saving"}>{state === "saving" ? <LoaderCircle className="animate-spin" size={16}/> : state === "saved" ? <Check size={16}/> : <Save size={16}/>} {state === "saved" ? "Profile saved" : "Save profile"}</Button></div>
     {state === "error" && <div role="alert" className="mb-5 rounded-lg border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">Could not save. Check the required fields and try again.</div>}
@@ -137,9 +93,9 @@ export function ProfileForm() {
         <Card className="p-5 md:p-7"><SectionTitle title="Personal information" copy="How employers can identify and contact you."/><div className="grid gap-4 md:grid-cols-2"><Field name="fullName" label="Full name" placeholder="Your legal or professional name" required/><Field name="preferredName" label="Preferred name" placeholder="What should we call you?"/><Field name="email" label="Email" type="email" placeholder="you@example.com" required/><Field name="phone" label="Phone" placeholder="+91 ..." required/><Field name="city" label="Current city" placeholder="Bengaluru" required/><Field name="country" label="Current country" placeholder="India" required/><Field name="timezone" label="Timezone" defaultValue="Asia/Kolkata" required/><div className="field"><label>Remote policy</label><div className="flex h-[43px] items-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-300/[.06] px-3 text-sm text-emerald-200"><ShieldCheck size={16}/>Remote only · locked</div></div></div></Card>
         <Card className="p-5 md:p-7"><SectionTitle title="Online profiles" copy="Used for application fields when you provide them."/><div className="grid gap-4 md:grid-cols-2"><Field name="linkedInUrl" label="LinkedIn" placeholder="https://linkedin.com/in/..."/><Field name="githubUrl" label="GitHub" placeholder="https://github.com/..."/><Field name="portfolioUrl" label="Portfolio" placeholder="https://..."/></div></Card>
         <Card className="p-5 md:p-7"><SectionTitle title="Career information" copy="Compensation and authorization are never inferred."/><div className="grid gap-4 md:grid-cols-2"><Field name="currentEmployer" label="Current employer"/><Field name="currentRole" label="Current role"/><Field name="totalYearsExperience" label="Years of experience" type="number" defaultValue="0" required/><Field name="noticePeriod" label="Notice period" placeholder="30 days"/><Field name="expectedCompensation" label="Expected compensation" placeholder="Optional"/><Select name="currency" label="Currency" options={["INR","USD","EUR","GBP","AED"]}/><Select name="sponsorshipRequired" label="Sponsorship required" options={["UNKNOWN","NO","YES"]}/><Field name="timezoneFlexibility" label="Timezone flexibility" placeholder="e.g. 4 hours overlap with Europe"/><div className="field md:col-span-2"><label>Work authorization — use your exact words</label><textarea className="control min-h-24 resize-y" name="workAuthorization" placeholder="Leave blank if unknown; Rolevana will ask before applying."/></div></div></Card>
-        <Card className="p-5 md:p-7"><SectionTitle title="Target role & preferences" copy="Controls what jobs show under For Me. You can change this anytime."/>
+        <Card className="p-5 md:p-7"><SectionTitle title="Target role & preferences" copy="Controls every Jobs view. You can change this anytime."/>
           <div className="grid gap-4 md:grid-cols-2">
-            <RoleDropdown value={targetRole} category={targetCategory} onChange={(title, cat) => { setTargetRole(title); setTargetCategory(cat); }}/>
+            <RoleDropdown value={targetRole} category={targetCategory} onChange={(title, cat) => { setTargetRole(title); setTargetCategory(cat); setTargetRoleSelectionSource("USER"); }}/>
             <Field name="experienceToleranceYears" label="Experience tolerance (years)" type="number" defaultValue="1"/>
           </div>
         </Card>

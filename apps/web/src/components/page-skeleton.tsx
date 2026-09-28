@@ -1,0 +1,8 @@
+import { Card } from "@rolevana/ui";
+
+export function PageSkeleton({ kind = "cards" }: { kind?: "cards" | "form" | "detail" }) {
+  return <div aria-label="Loading page" aria-live="polite">
+    <div className="skeleton h-8 w-48 rounded"/><div className="skeleton mt-3 h-4 w-80 max-w-full rounded"/>
+    {kind === "form" ? <div className="mt-7 grid gap-5 xl:grid-cols-[210px_1fr]"><Card className="space-y-3 p-4">{Array.from({ length: 6 }, (_, index) => <div className="skeleton h-9 rounded" key={index}/>)}</Card><div className="space-y-5">{Array.from({ length: 3 }, (_, index) => <Card className="p-6" key={index}><div className="skeleton h-5 w-40 rounded"/><div className="mt-6 grid gap-4 md:grid-cols-2">{Array.from({ length: 4 }, (__, field) => <div key={field}><div className="skeleton h-3 w-24 rounded"/><div className="skeleton mt-2 h-11 rounded-lg"/></div>)}</div></Card>)}</div></div> : kind === "detail" ? <div className="mt-7 grid gap-5 xl:grid-cols-[1.4fr_.8fr]"><Card className="space-y-3 p-6">{Array.from({ length: 12 }, (_, index) => <div className={`skeleton h-3 rounded ${index % 3 === 0 ? "w-4/5" : "w-full"}`} key={index}/>)}</Card><Card className="space-y-5 p-5">{Array.from({ length: 7 }, (_, index) => <div key={index}><div className="skeleton h-3 w-20 rounded"/><div className="skeleton mt-2 h-4 w-3/4 rounded"/></div>)}</Card></div> : <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <Card className="p-5" key={index}><div className="skeleton h-4 w-2/3 rounded"/><div className="skeleton mt-7 h-8 w-1/3 rounded"/><div className="skeleton mt-3 h-3 w-4/5 rounded"/></Card>)}</div>}
+  </div>;
+}

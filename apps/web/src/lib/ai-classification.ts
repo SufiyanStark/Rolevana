@@ -1,9 +1,13 @@
 import { FreeAIProviderRouter, NvidiaProvider, OpenRouterProvider, WaitingForFreeAIError, chunkForAI, stableJobDescriptionHash, verifiedFreePricing, type AIJobClassification, type FreeProviderCandidate } from "@rolevana/ai";
-import type { JobTargetPreferences, NormalizedJob } from "@rolevana/job-sources";
+import { roleMatchesTarget, type JobTargetPreferences, type NormalizedJob } from "@rolevana/job-sources";
 import { readAIProviderHealth, readClassificationCache, saveClassificationCache } from "./job-store";
 
 export async function classifyAmbiguousJobs(userId: string, jobs: NormalizedJob[], batchSize: number, target?: JobTargetPreferences): Promise<NormalizedJob[]> {
-  const ambiguous = jobs.filter((job) => job.status === "NEEDS_CLASSIFICATION");
+  const ambiguous = jobs.filter((job) => {
+    if (job.status !== "NEEDS_CLASSIFICATION") return false;
+    if (!target) return job.frontendClassification === "AMBIGUOUS";
+    return roleMatchesTarget(job.title, job.roleCategory, target.selectedRoleTitle, target.roleCategory, target.relatedTitles, target.includeRelatedTitles) === null;
+  });
   if (!ambiguous.length) return jobs;
   const [health, cache] = await Promise.all([readAIProviderHealth(userId), readClassificationCache(userId)]);
   const candidates: FreeProviderCandidate[] = [];

@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { JobDiscoveryService, MockJobSourceAdapter, NonOverlappingDiscoveryScheduler, SourceHttpClient, classifyFrontendRole, deduplicateJobs, filterDiscoveredJob, isRegionEligible, normalizeRemoteRegions, normalizeWorkplaceType, parseSupportedBoardUrl, phaseOneMockJobs, sanitizeJobHtml, type JobSourceAdapter, type NormalizedJob } from "./index";
+import { JobDiscoveryService, MockJobSourceAdapter, NonOverlappingDiscoveryScheduler, SourceHttpClient, classifyFrontendRole, deduplicateJobs, extractExperienceRequirement, filterDiscoveredJob, isRegionEligible, normalizeRemoteRegions, normalizeWorkplaceType, parseSupportedBoardUrl, phaseOneMockJobs, sanitizeJobHtml, type JobSourceAdapter, type JobTargetPreferences, type NormalizedJob } from "./index";
 
 const job = (overrides: Partial<NormalizedJob> = {}): NormalizedJob => ({ ...phaseOneMockJobs[0]!, ...overrides, sourceReferences: overrides.sourceReferences ?? phaseOneMockJobs[0]!.sourceReferences });
 
 describe("deterministic job discovery", () => {
+  const frontendTarget: JobTargetPreferences = { selectedRoleTitle: "Frontend Engineer", roleCategory: "FRONTEND_ENGINEERING", relatedTitles: ["React Engineer", "React Developer", "Next.js Engineer", "UI Engineer", "UI Developer"], includeRelatedTitles: true, candidateYearsExperience: 3, experienceToleranceYears: 1 };
   it.each([["Remote", "REMOTE"], ["Hybrid", "HYBRID"], ["On-site", "ONSITE"]] as const)("normalizes %s workplace", (value, expected) => expect(normalizeWorkplaceType(value)).toBe(expected));
   it("accepts remote jobs and rejects hybrid/onsite jobs", () => {
     expect(filterDiscoveredJob(job(), ["India", "Worldwide", "APAC"]).status).toBe("QUALIFIED_BY_FILTER");
@@ -12,10 +13,27 @@ describe("deterministic job discovery", () => {
   });
   it.each(["Worldwide", "India", "APAC"])("accepts %s remote eligibility", (region) => expect(isRegionEligible(normalizeRemoteRegions(region), ["India", "Worldwide", "APAC"])).toBe(true));
   it.each(["US only", "EU only"])("rejects %s for the current geography", (region) => expect(isRegionEligible(normalizeRemoteRegions(region), ["India", "Worldwide", "APAC"])).toBe(false));
+  it("maps explicit countries to known regions without guessing unknown locations", () => {
+    expect(normalizeRemoteRegions("Singapore")).toEqual(["REMOTE_APAC"]);
+    expect(normalizeRemoteRegions("Ireland")).toEqual(["REMOTE_EU_ONLY"]);
+    expect(normalizeRemoteRegions("Remote")).toEqual(["UNKNOWN"]);
+  });
   it("accepts explicit frontend titles, rejects backend-only, and queues ambiguous titles", () => {
     expect(classifyFrontendRole("Senior Frontend Engineer", "React").classification).toBe("FRONTEND");
     expect(classifyFrontendRole("Java Backend Engineer", "Spring APIs").classification).toBe("NOT_FRONTEND");
     expect(classifyFrontendRole("Software Engineer", "Build product systems").classification).toBe("AMBIGUOUS");
+  });
+  it.each(["Frontend Engineer", "Front End Engineer", "Frontend Developer", "Front End Developer", "React Engineer", "React Developer", "Next.js Engineer", "Next.js Developer", "UI Engineer", "UI Developer", "Software Engineer - Frontend", "Software Engineer, Frontend"])("deterministically accepts the obvious target title %s", (title) => {
+    expect(filterDiscoveredJob(job({ title, roleCategory: "FRONTEND_ENGINEERING", workplaceType: "REMOTE", remoteRegions: ["REMOTE_WORLDWIDE"] }), ["India", "Worldwide", "APAC"], frontendTarget).status).toBe("QUALIFIED_BY_FILTER");
+  });
+  it("keeps a known target role with unknown geography out of the AI-wait state", () => {
+    expect(filterDiscoveredJob(job({ title: "Frontend Engineer", roleCategory: "FRONTEND_ENGINEERING", workplaceType: "REMOTE", remoteRegions: ["UNKNOWN"] }), ["India", "Worldwide", "APAC"], frontendTarget).status).toBe("NEEDS_CLASSIFICATION");
+  });
+  it("extracts common deterministic experience requirements", () => {
+    expect(extractExperienceRequirement("Frontend Engineer", "Requires 3+ years of professional software engineering experience.").minimumYearsExperience).toBe(3);
+    expect(extractExperienceRequirement("Senior Frontend Engineer", "Experience: 8+ years building web applications.").minimumYearsExperience).toBe(8);
+    expect(extractExperienceRequirement("Frontend Engineer", "Requires 3–5 years of experience.")).toMatchObject({ minimumYearsExperience: 3, maximumYearsExperience: 5 });
+    expect(extractExperienceRequirement("Frontend Engineer", "An invalid 4–40 years range should not become an eligibility rule.").minimumYearsExperience).toBeUndefined();
   });
   it("sanitizes executable job HTML while preserving meaningful text", () => {
     const value = sanitizeJobHtml('<h2>Role</h2><script>alert(1)</script><ul><li onclick="bad()">React</li></ul>');

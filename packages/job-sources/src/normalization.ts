@@ -1,4 +1,4 @@
-import { inferRoleCategory } from "@rolevana/domain";
+import { findRole, inferRoleCategory } from "@rolevana/domain";
 import type { ExperienceCompatibility, FreshnessBucket, FrontendClassification, NormalizedJob, RemoteRegion, Seniority, WorkplaceType } from "./types";
 
 const decodeEntities = (value: string) => value
@@ -37,10 +37,10 @@ export function normalizeRemoteRegions(...values: Array<string | undefined>): Re
   const regions: RemoteRegion[] = [];
   if (/worldwide|anywhere|global|all countries/.test(text)) regions.push("REMOTE_WORLDWIDE");
   if (/\bindia\b/.test(text)) regions.push("REMOTE_INDIA");
-  if (/\bapac\b|asia[ -]?pacific|anywhere in asia|\basia\b/.test(text)) regions.push("REMOTE_APAC");
+  if (/\bapac\b|asia[ -]?pacific|anywhere in asia|\basia\b|\b(?:singapore|australia|new zealand|japan|south korea|philippines|indonesia|malaysia|thailand|vietnam|hong kong)\b/.test(text)) regions.push("REMOTE_APAC");
   if (/\b(us|u\.s\.|usa|united states)\b(?:\s*only)?/.test(text)) regions.push("REMOTE_US_ONLY");
   if (/\bcanada\b(?:\s*only)?/.test(text)) regions.push("REMOTE_CANADA_ONLY");
-  if (/\b(eu|europe|european union)\b(?:\s*only)?/.test(text)) regions.push("REMOTE_EU_ONLY");
+  if (/\b(eu|europe|european union|ireland|germany|france|spain|italy|netherlands|belgium|poland|portugal|sweden|denmark|finland|austria|czechia|romania|greece)\b(?:\s*only)?/.test(text)) regions.push("REMOTE_EU_ONLY");
   if (/\b(uk|united kingdom)\b(?:\s*only)?/.test(text)) regions.push("REMOTE_UK_ONLY");
   if (/\blatam\b|latin america/.test(text)) regions.push("REMOTE_LATAM");
   return regions.length ? [...new Set(regions)] : ["UNKNOWN"];
@@ -80,8 +80,14 @@ export function normalizeSeniority(title: string, description = ""): Seniority {
 export function extractExperienceRequirement(title: string, description: string): { minimumYearsExperience?: number; maximumYearsExperience?: number; seniority: Seniority } {
   const text = `${title} ${description}`;
   const range = text.match(/\b(\d{1,2})\s*(?:-|–|to)\s*(\d{1,2})\s*(?:\+\s*)?(?:years?|yrs?)\b/i);
-  if (range) return { minimumYearsExperience: Number(range[1]), maximumYearsExperience: Number(range[2]), seniority: normalizeSeniority(title, description) };
-  const matches = [...text.matchAll(/\b(?:minimum\s+of\s+|at\s+least\s+)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:\s+of)?\s+(?:relevant\s+)?experience\b/gi)].map((match) => Number(match[1])).filter((value) => value <= 30);
+  if (range) {
+    const minimumYearsExperience = Number(range[1]); const maximumYearsExperience = Number(range[2]);
+    if (minimumYearsExperience <= maximumYearsExperience && maximumYearsExperience <= 30) return { minimumYearsExperience, maximumYearsExperience, seniority: normalizeSeniority(title, description) };
+  }
+  const matches = [
+    ...text.matchAll(/\b(?:minimum\s+of\s+|at\s+least\s+)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b(?=[^.!?\n]{0,60}\bexperience\b)/gi),
+    ...text.matchAll(/\bexperience\s*(?::|of)?\s*(?:at\s+least\s+|minimum\s+of\s+)?(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b/gi)
+  ].map((match) => Number(match[1])).filter((value) => value <= 30);
   return { ...(matches.length ? { minimumYearsExperience: Math.min(...matches) } : {}), seniority: normalizeSeniority(title, description) };
 }
 
@@ -94,11 +100,14 @@ export function experienceCompatibility(candidateYears: number, minimumYears: nu
 
 export function roleMatchesTarget(title: string, roleCategory: string, targetTitle: string, targetCategory: string, relatedTitles: string[], includeRelatedTitles: boolean): boolean | null {
   if (!targetTitle) return null;
-  if (roleCategory === targetCategory && roleCategory !== "OTHER") return true;
   const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim();
-  const candidates = [targetTitle, ...(includeRelatedTitles ? relatedTitles : [])].map((value) => value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim());
-  if (candidates.some((value) => value && (normalizedTitle.includes(value) || value.includes(normalizedTitle)))) return true;
-  if (roleCategory === "OTHER" && /\b(software engineer|product engineer|web engineer|full[ -]?stack engineer|technical engineer)\b/i.test(title)) return null;
+  const targetEntry = findRole(targetTitle);
+  const candidates = [targetTitle, ...(targetEntry?.aliases ?? []), ...(includeRelatedTitles ? [...(targetEntry?.relatedTitles ?? []), ...relatedTitles] : [])].map((value) => value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim());
+  if (candidates.some((value) => value && normalizedTitle.includes(value))) return true;
+  if (/\b(software engineer|product engineer|web engineer|technical engineer)\b/i.test(title)) return null;
+  const knownJobRole = findRole(title);
+  if (knownJobRole) return false;
+  if (roleCategory === targetCategory && roleCategory !== "OTHER") return null;
   return false;
 }
 
