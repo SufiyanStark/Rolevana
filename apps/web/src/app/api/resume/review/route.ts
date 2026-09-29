@@ -2,6 +2,7 @@ import { candidateProfileSchema } from "@rolevana/domain";
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { readLocalProfile, readLocalResume, readResumeImportReview, saveLocalProfile, updateLocalResume } from "@/lib/local-store";
+import { refreshReadinessOnly } from "@/lib/brain-service";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -17,7 +18,9 @@ export async function POST(request: Request) {
   const resume = await readLocalResume(user.id);
   if (!resume) return NextResponse.json({ error: "No master resume exists." }, { status: 404 });
   await saveLocalProfile(user.id, result.data);
-  await updateLocalResume(user.id, resume, { parsingStatus: "VERIFIED", verificationStatus: "VERIFIED" });
-  return NextResponse.json({ ok: true });
+  const verifiedAt=new Date().toISOString();
+  await updateLocalResume(user.id, { ...resume, verifiedAt, verifiedChecksum:resume.checksum, verifiedVersionHash:resume.checksum }, { parsingStatus: "VERIFIED", verificationStatus: "VERIFIED" });
+  await refreshReadinessOnly(user.id);
+  return NextResponse.json({ ok: true, verifiedAt, versionHash:resume.checksum });
 }
 

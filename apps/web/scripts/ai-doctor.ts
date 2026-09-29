@@ -14,11 +14,14 @@ for (const item of results) {
   console.log(`Authenticated: ${item.authenticated ? "Yes" : "No"}`);
   console.log(`Model: ${item.model ?? "-"}`);
   console.log(`Cost policy: ${item.freeVerified ? "VERIFIED FREE" : "FREE ONLY / NOT VERIFIED"}`);
+  console.log(`Entitlement: ${item.entitlement ?? "-"}`);
+  console.log(`Environment: ${item.environment ?? "-"}`);
   console.log(`Inference: ${item.inference}`);
   console.log(`Privacy classes: ${item.privacyClasses.join(", ")}`);
   console.log(`Latency: ${item.latencyMs === null ? "-" : `${item.latencyMs} ms`}`);
   console.log(`Cooldown: ${item.cooldownUntil ?? "-"}`);
   console.log(`Status: ${item.status}\n`);
+  if (item.models) for (const [slot, detail] of Object.entries(item.models)) console.log(`  ${slot}: ${detail.entitlement} / ${detail.health}`);
 }
 console.log(`Overall: ${results.filter((item) => item.status === "WORKING").length}/${results.length} providers operational`);
 console.log("AI Spend: $0.00");

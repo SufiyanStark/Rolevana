@@ -5,6 +5,7 @@ describe("AI providers", () => {
   it("fails clearly when a vendor is not configured", async () => await expect(new OpenRouterProvider("model").classifyJob("job")).rejects.toThrow(/not configured/));
   it("blocks unknown-cost models before they can run", () => expect(() => assertFreeModel({ provider: new OpenRouterProvider("paid-or-unknown", "key"), pricing: unknownPricing() })).toThrow(BillableModelBlockedError));
   it("allows the OpenRouter free alias only after zero pricing is verified", () => expect(() => assertFreeModel({ provider: new OpenRouterProvider("openrouter/free", "key"), pricing: verifiedFreePricing("PROVIDER_METADATA") })).not.toThrow());
+  it("allows development endpoints only outside production",()=>{const candidate={provider:new OpenRouterProvider("dev","key"),pricing:verifiedFreePricing("OFFICIAL_DEVELOPMENT_ENTITLEMENT"),entitlement:"FREE_DEVELOPMENT_ENDPOINT" as const};expect(()=>assertFreeModel({...candidate,usageMode:"DEVELOPMENT"})).not.toThrow();expect(()=>assertFreeModel({...candidate,usageMode:"PRODUCTION"})).toThrow(BillableModelBlockedError);});
   it("queues instead of falling back to a paid provider", async () => {
     const queued: string[] = [];
     const limited = new MockAIProvider();

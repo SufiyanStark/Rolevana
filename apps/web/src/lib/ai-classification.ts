@@ -1,4 +1,4 @@
-import { FreeAIProviderRouter, NvidiaProvider, OpenRouterProvider, WaitingForFreeAIError, chunkForAI, stableJobDescriptionHash, verifiedFreePricing, type AIJobClassification, type FreeProviderCandidate } from "@rolevana/ai";
+import { FreeAIProviderRouter, KiloProvider, NvidiaProvider, OpenRouterProvider, WaitingForFreeAIError, chunkForAI, stableJobDescriptionHash, verifiedFreePricing, type AIJobClassification, type FreeProviderCandidate } from "@rolevana/ai";
 import { roleMatchesTarget, type JobTargetPreferences, type NormalizedJob } from "@rolevana/job-sources";
 import { readAIProviderHealth, readClassificationCache, saveClassificationCache } from "./job-store";
 
@@ -11,6 +11,8 @@ export async function classifyAmbiguousJobs(userId: string, jobs: NormalizedJob[
   if (!ambiguous.length) return jobs;
   const [health, cache] = await Promise.all([readAIProviderHealth(userId), readClassificationCache(userId)]);
   const candidates: FreeProviderCandidate[] = [];
+  const kilo=health.find((entry)=>entry.provider==="kilo"&&entry.status==="WORKING"&&entry.freeVerified&&entry.model);
+  if(kilo?.model&&process.env.KILO_BASE_URL)candidates.push({provider:new KiloProvider(kilo.model,process.env.KILO_BASE_URL),pricing:verifiedFreePricing("PROVIDER_METADATA")});
   for (const item of health.filter((entry) => entry.status === "WORKING" && entry.freeVerified && entry.model)) {
     if (item.provider === "openrouter" && process.env.OPENROUTER_API_KEY) candidates.push({ provider: new OpenRouterProvider(item.model!, process.env.OPENROUTER_API_KEY), pricing: verifiedFreePricing("PROVIDER_METADATA") });
     if (item.provider === "nvidia" && process.env.NVIDIA_API_KEY) candidates.push({ provider: new NvidiaProvider(item.model!, process.env.NVIDIA_API_KEY), pricing: verifiedFreePricing("TRUSTED_ALLOWLIST") });

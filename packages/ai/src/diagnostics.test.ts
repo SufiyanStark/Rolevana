@@ -44,6 +44,14 @@ describe("AI provider diagnostics", () => {
     expect(result).toMatchObject({ status: "AUTHENTICATED_MODEL_SELECTION_REQUIRED", authenticated: true, availableModels: ["deepseek-ai/deepseek-v3"] });
   });
 
+  it("rejects the invalid NVIDIA alias deepseek even when the catalog is reachable",async()=>{const fetcher=vi.fn().mockResolvedValue(json({data:[{id:"deepseek-ai/deepseek-v4.1-flash"}]}));const result=await new AIProviderDiagnostics(diagnosticConfigFromEnv({...base,NVIDIA_API_KEY:"nvapi-test",NVIDIA_MODEL:"deepseek",NVIDIA_FREE_MODELS:"deepseek"}),fetcher).diagnose("nvidia");expect(result.status).toBe("MODEL_UNAVAILABLE");});
+
+  it("requires an exact NVIDIA free allowlist before inference",async()=>{const fetcher=vi.fn().mockResolvedValue(json({data:[{id:"deepseek-ai/deepseek-v4.1-flash"}]}));const result=await new AIProviderDiagnostics(diagnosticConfigFromEnv({...base,NVIDIA_API_KEY:"nvapi-test",NVIDIA_MODEL:"deepseek-ai/deepseek-v4.1-flash",NVIDIA_FREE_MODELS:""}),fetcher).diagnose("nvidia");expect(result.status).toBe("FREE_MODEL_UNVERIFIED");});
+
+  it("verifies the exact NVIDIA Ultra development entitlement with a minimal probe",async()=>{const model="nvidia/nemotron-3-ultra-550b-a55b";const fetcher=vi.fn().mockResolvedValueOnce(json({data:[{id:model}]})).mockResolvedValueOnce(json({model,choices:[{message:{content:"ROLEVANA_OK"}}]}));const result=await new AIProviderDiagnostics(diagnosticConfigFromEnv({...base,NVIDIA_API_KEY:"nvapi-test",NVIDIA_MODEL:model,NVIDIA_ULTRA_MODEL:model,NVIDIA_DEVELOPMENT_MODELS:model,ROLEVANA_USAGE_MODE:"DEVELOPMENT"}),fetcher).diagnose("nvidia");expect(result).toMatchObject({status:"WORKING",freeVerified:true,entitlement:"FREE_DEVELOPMENT_ENDPOINT",environment:"DEVELOPMENT_ONLY",inference:"PASS"});expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toMatchObject({max_tokens:32,temperature:0,chat_template_kwargs:{enable_thinking:false},stream:false});});
+
+  it("blocks development-only NVIDIA endpoints in production before inference",async()=>{const model="nvidia/nemotron-3-ultra-550b-a55b";const fetcher=vi.fn().mockResolvedValueOnce(json({data:[{id:model}]}));const result=await new AIProviderDiagnostics(diagnosticConfigFromEnv({...base,NVIDIA_API_KEY:"nvapi-test",NVIDIA_MODEL:model,NVIDIA_DEVELOPMENT_MODELS:model,ROLEVANA_USAGE_MODE:"PRODUCTION"}),fetcher).diagnose("nvidia");expect(result.status).toBe("PAID_MODEL_BLOCKED");expect(fetcher).toHaveBeenCalledTimes(1);});
+
   it("sanitizes secret-looking strings from diagnostic serialization", () => {
     expect(sanitizeDiagnosticOutput({ message: "Bearer sk-secret-value" })).not.toContain("sk-secret-value");
   });

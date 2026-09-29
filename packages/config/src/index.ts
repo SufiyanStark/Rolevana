@@ -6,6 +6,7 @@ const optionalString = z.preprocess(blankToUndefined, z.string().optional());
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  ROLEVANA_USAGE_MODE: z.enum(["DEVELOPMENT", "PRODUCTION"]).default("DEVELOPMENT"),
   DRY_RUN: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   FREE_AI_ONLY: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   FREE_INFRA_MODE: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
@@ -17,11 +18,14 @@ export const envSchema = z.object({
   OPENROUTER_API_KEY: optionalString,
   OPENROUTER_MODEL: z.string().default("openrouter/free"),
   NVIDIA_API_KEY: optionalString,
+  NVIDIA_BASE_URL: z.string().url().default("https://integrate.api.nvidia.com/v1"),
   NVIDIA_MODEL: optionalString,
+  NVIDIA_ULTRA_MODEL: z.string().default("nvidia/nemotron-3-ultra-550b-a55b"),
   NVIDIA_DEEPSEEK_MODEL: z.string().default("deepseek-ai/deepseek-v4.1-flash"),
   NVIDIA_CODER_MODEL: z.string().default("deepseek-ai/deepseek-coder-6.7b-instruct"),
   NVIDIA_REASONING_MODEL: z.string().default("nvidia/nemotron-3-super-120b-a12b"),
   NVIDIA_FREE_MODELS: z.string().default(""),
+  NVIDIA_DEVELOPMENT_MODELS: z.string().default("nvidia/nemotron-3-ultra-550b-a55b"),
   OVH_AI_BASE_URL: optionalUrl,
   OVH_AI_MODEL: optionalString,
   OVH_AI_FREE_MODELS: z.string().default(""),
@@ -57,6 +61,7 @@ export const envSchema = z.object({
   TAILORED_RESUME_RETENTION_DAYS: z.coerce.number().int().min(1).default(60)
 }).superRefine((env, context) => {
   if (env.FREE_AI_ONLY && env.MAX_AI_COST_USD !== 0) context.addIssue({ code: "custom", path: ["MAX_AI_COST_USD"], message: "MAX_AI_COST_USD must be 0 when FREE_AI_ONLY is enabled." });
+  if (env.ROLEVANA_USAGE_MODE === "PRODUCTION" && env.NVIDIA_DEVELOPMENT_MODELS.trim()) context.addIssue({ code: "custom", path: ["NVIDIA_DEVELOPMENT_MODELS"], message: "Development-only NVIDIA endpoints cannot be enabled in production mode." });
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
