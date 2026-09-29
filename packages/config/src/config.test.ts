@@ -13,5 +13,6 @@ describe("environment", () => {
     expect(env.MINIMUM_MATCH_SCORE).toBe(75);
   });
   it("rejects a non-zero AI budget in free-only mode", () => expect(() => parseEnv({ MAX_AI_COST_USD: "0.01" })).toThrow());
+  it("blocks development-only NVIDIA entitlements in production",()=>expect(()=>parseEnv({ROLEVANA_USAGE_MODE:"PRODUCTION",NVIDIA_DEVELOPMENT_MODELS:"nvidia/nemotron-3-ultra-550b-a55b"})).toThrow());
   it("rejects unsafe scan rates", () => expect(() => parseEnv({ JOB_SCAN_INTERVAL_MINUTES: "1" })).toThrow());
 });

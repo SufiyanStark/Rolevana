@@ -38,6 +38,14 @@ export const educationSchema = z.object({
   endDate: z.string().optional()
 });
 
+export const workAuthorizationRecordSchema = z.object({
+  jurisdiction: z.string().trim().min(1).max(120),
+  status: z.enum(["AUTHORIZED", "NOT_AUTHORIZED", "UNKNOWN"]),
+  requiresSponsorship: z.enum(["YES", "NO", "UNKNOWN"]),
+  verified: z.boolean().default(false),
+  verifiedAt: z.string().datetime().optional()
+});
+
 export const candidateProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   preferredName: z.string().trim().max(80).default(""),
@@ -63,6 +71,7 @@ export const candidateProfileSchema = z.object({
   allowedRegions: z.array(z.string().min(1)).min(1),
   workAuthorization: z.string().max(2000).default(""),
   sponsorshipRequired: z.enum(["YES", "NO", "UNKNOWN"]),
+  workAuthorizations: z.array(workAuthorizationRecordSchema).default([]),
   relocationWillingness: z.enum(["YES", "NO", "CASE_BY_CASE"]),
   timezoneFlexibility: z.string().max(1000).default(""),
   primaryTargetRoleTitle: z.string().trim().max(120).default(""),
@@ -88,7 +97,7 @@ export const createEmptyCandidateProfile = (): CandidateProfile => ({
   linkedInUrl: "", githubUrl: "", portfolioUrl: "", websiteUrl: "", currentEmployer: "", currentRole: "",
   totalYearsExperience: 0, noticePeriod: "", currentCompensation: "", expectedCompensation: "",
   preferredSalaryRange: "", currency: "INR", employmentTypes: ["FULL_TIME"], remoteOnly: true,
-  allowedRegions: ["India", "Worldwide", "APAC"], workAuthorization: "", sponsorshipRequired: "UNKNOWN",
+  allowedRegions: ["India", "Worldwide", "APAC"], workAuthorization: "", sponsorshipRequired: "UNKNOWN", workAuthorizations: [],
   relocationWillingness: "CASE_BY_CASE", timezoneFlexibility: "", primaryTargetRoleTitle: "", primaryTargetRoleCategory: "OTHER", targetRoleSelectionSource: "RESUME", secondaryTargetRoles: [], includeRelatedTitles: true, experienceToleranceYears: 1, minimumSeniority: "UNKNOWN", maximumSeniority: "UNKNOWN", skills: [], experience: [], projects: [], education: []
 });
 
@@ -124,6 +133,9 @@ export const masterResumeSchema = z.object({
   parsedData: z.custom<ParsedResumeData>(),
   parsingStatus: z.enum(resumeParsingStatuses),
   verificationStatus: z.enum(["UNVERIFIED", "REVIEW_REQUIRED", "VERIFIED"])
+  ,verifiedAt: z.string().datetime().optional()
+  ,verifiedChecksum: z.string().regex(/^[a-f0-9]{64}$/).optional()
+  ,verifiedVersionHash: z.string().regex(/^[a-f0-9]{64}$/).optional()
 });
 
 export type MasterResume = z.infer<typeof masterResumeSchema>;

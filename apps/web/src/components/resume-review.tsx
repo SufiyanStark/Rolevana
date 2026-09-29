@@ -15,9 +15,9 @@ const fields: Array<{ key: FlatKey; label: string; group: "personal" | "links" |
 const extractedFor = (data: ParsedResumeData, item: typeof fields[number]): ExtractedField<string | number> | undefined => data[item.group][item.key as never] as ExtractedField<string | number> | undefined;
 const collectionLabels = (data: ParsedResumeData, name: "skills" | "experience" | "projects" | "education") => {
   if (name === "skills") return data.skills.map((item) => item.value);
-  if (name === "experience") return data.experience.map((item) => `${item.value.role} · ${item.value.company}`);
-  if (name === "projects") return data.projects.map((item) => item.value.name);
-  return data.education.map((item) => `${item.value.degree || "Education"} · ${item.value.institution}`);
+  if (name === "experience") return data.experience.map((item) => `${item.value.role} · ${item.value.company} · ${item.value.startDate}–${item.value.current ? "Present" : item.value.endDate ?? "Unknown"} · ${item.value.achievements.join("; ") || "No extracted achievements"} · ${item.value.technologies.join(", ") || "No extracted technologies"}`);
+  if (name === "projects") return data.projects.map((item) => `${item.value.name} · ${item.value.description} · ${item.value.achievements.join("; ") || "No extracted achievements"} · ${item.value.technologies.join(", ") || "No extracted technologies"}`);
+  return data.education.map((item) => `${item.value.degree || "Education"} · ${item.value.field || "Field not extracted"} · ${item.value.institution} · ${item.value.startDate ?? "?"}–${item.value.endDate ?? "?"}`);
 };
 
 export function ResumeReview() {
@@ -57,14 +57,14 @@ export function ResumeReview() {
       fullName: value("fullName", ""), preferredName: profile?.preferredName ?? "", email: value("email", ""), phone: value("phone", ""), city: value("city", ""), country: value("country", ""), timezone: profile?.timezone ?? "Asia/Kolkata",
       linkedInUrl: value("linkedInUrl", ""), githubUrl: value("githubUrl", ""), portfolioUrl: value("portfolioUrl", ""), websiteUrl: profile?.websiteUrl ?? "",
       currentEmployer: value("currentEmployer", ""), currentRole: value("currentRole", ""), totalYearsExperience: Number(value("totalYearsExperience", 0)), noticePeriod: profile?.noticePeriod ?? "", currentCompensation: profile?.currentCompensation ?? "", expectedCompensation: profile?.expectedCompensation ?? "", preferredSalaryRange: profile?.preferredSalaryRange ?? "", currency: profile?.currency ?? "INR",
-      employmentTypes: profile?.employmentTypes ?? ["FULL_TIME"], remoteOnly: true, allowedRegions: profile?.allowedRegions ?? ["India", "Worldwide", "APAC"], workAuthorization: profile?.workAuthorization ?? "", sponsorshipRequired: profile?.sponsorshipRequired ?? "UNKNOWN", relocationWillingness: profile?.relocationWillingness ?? "CASE_BY_CASE", timezoneFlexibility: profile?.timezoneFlexibility ?? "",
+      employmentTypes: profile?.employmentTypes ?? ["FULL_TIME"], remoteOnly: true, allowedRegions: profile?.allowedRegions ?? ["India", "Worldwide", "APAC"], workAuthorization: profile?.workAuthorization ?? "", sponsorshipRequired: profile?.sponsorshipRequired ?? "UNKNOWN", workAuthorizations: profile?.workAuthorizations ?? [], relocationWillingness: profile?.relocationWillingness ?? "CASE_BY_CASE", timezoneFlexibility: profile?.timezoneFlexibility ?? "",
       skills: collections.skills ? mergeUnique(profile?.skills ?? [], parsed.skills.map((item) => ({ name: item.value })), (item) => item.name.toLowerCase()) : profile?.skills ?? [],
       experience: collections.experience ? mergeUnique(profile?.experience ?? [], parsed.experience.map((item) => item.value), (item) => `${item.company}|${item.role}|${item.startDate}`.toLowerCase()) : profile?.experience ?? [],
       projects: collections.projects ? mergeUnique(profile?.projects ?? [], parsed.projects.map((item) => item.value), (item) => item.name.toLowerCase()) : profile?.projects ?? [],
       education: collections.education ? mergeUnique(profile?.education ?? [], parsed.education.map((item) => item.value), (item) => `${item.institution}|${item.degree}|${item.field}`.toLowerCase()) : profile?.education ?? []
     };
     const response = await fetch("/api/resume/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    if (response.ok) { setStatus("saved"); setMessage("Imported profile verified. This data is now the candidate source of truth."); }
+    if (response.ok) { setStatus("saved"); setMessage("Master resume verified. Its current checksum and structured facts are now the candidate source of truth."); }
     else { const data = await response.json() as { error?: string }; setStatus("error"); setMessage(data.error ?? "Could not verify the import."); }
   }
 
@@ -77,7 +77,7 @@ export function ResumeReview() {
       return <Card className="p-4" key={name}><label className="flex items-center justify-between gap-3"><span><span className="block text-sm font-semibold capitalize">{name}</span><span className="mt-1 block text-xs text-slate-500">{labels.length} extracted</span></span><input type="checkbox" checked={collections[name]} onChange={(event) => setCollections({ ...collections, [name]: event.target.checked })}/></label>{labels.length > 0 && <ul className="mb-0 mt-3 space-y-1 border-t border-white/[.06] pt-3 text-xs text-slate-400">{labels.map((label, index) => <li key={`${label}-${index}`}>{label}</li>)}</ul>}</Card>;
     })}</div>
     {resume.parsedData.warnings.length > 0 && <Card className="p-5"><h2 className="mt-0 text-sm font-semibold">Parsing notes</h2><ul className="mb-0 text-sm text-slate-400">{resume.parsedData.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></Card>}
-    <div className="flex justify-end"><Button size="lg" disabled={status === "saving"} onClick={() => void confirm()}>{status === "saving" ? <LoaderCircle className="animate-spin" size={16}/> : status === "saved" ? <Check size={16}/> : <ShieldCheck size={16}/>}Verify imported profile</Button></div>
+    <div className="flex justify-end"><Button size="lg" disabled={status === "saving"} onClick={() => void confirm()}>{status === "saving" ? <LoaderCircle className="animate-spin" size={16}/> : status === "saved" ? <Check size={16}/> : <ShieldCheck size={16}/>}Verify Master Resume</Button></div>
   </div>;
 }
 

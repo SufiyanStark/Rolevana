@@ -38,4 +38,13 @@ describe.sequential("development local store", () => {
     const merged = mergeResumeIntoCandidateProfile({ ...createEmptyCandidateProfile(), preferredName: "Manual" }, second.resume.parsedData);
     expect(merged.profile).toMatchObject({ fullName: "Cached Person", preferredName: "Manual" });
   });
+
+  it("records resume verification and invalidates it when the master file changes", async()=>{
+    const first=await preserveLocalResume(userId,new File([new TextEncoder().encode("%PDF-1.4 first")],"resume.pdf",{type:"application/pdf"}));
+    const verifiedAt=new Date().toISOString();
+    await updateLocalResume(userId,{...first.resume,verifiedAt,verifiedChecksum:first.resume.checksum,verifiedVersionHash:first.resume.checksum},{parsingStatus:"VERIFIED",verificationStatus:"VERIFIED"});
+    expect(await readLocalResume(userId)).toMatchObject({verificationStatus:"VERIFIED",verifiedAt,verifiedVersionHash:first.resume.checksum});
+    await preserveLocalResume(userId,new File([new TextEncoder().encode("%PDF-1.4 changed")],"resume.pdf",{type:"application/pdf"}));
+    expect((await readLocalResume(userId))?.verificationStatus).not.toBe("VERIFIED");
+  });
 });

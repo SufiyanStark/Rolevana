@@ -59,7 +59,10 @@ export async function readLocalResume(userId: string): Promise<MasterResume | nu
     value = await readJson<MasterResume>(path.join(getLocalDataDirectory(), "master-resume.json"));
     if (value) await writeJsonAtomic(paths.resume, value);
   }
-  return value ? { ...value, uploadedAt: new Date(value.uploadedAt) } : null;
+  if (!value) return null;
+  const hydrated={ ...value, uploadedAt: new Date(value.uploadedAt) };
+  if (hydrated.verificationStatus === "VERIFIED" && (hydrated.verifiedVersionHash ?? hydrated.verifiedChecksum) !== hydrated.checksum) return { ...hydrated, verificationStatus:"REVIEW_REQUIRED", parsingStatus:"REVIEW_REQUIRED" };
+  return hydrated;
 }
 
 export async function preserveLocalResume(userId: string, file: File): Promise<{ resume: MasterResume; cached: boolean }> {

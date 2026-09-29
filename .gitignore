@@ -14,3 +14,4 @@ apps/web/.data/
 *.tsbuildinfo
 apps/web/public/uploads/
 packages/database/generated/
+apps/web/.data-backup-before-clean-test/
