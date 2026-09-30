@@ -5,7 +5,7 @@ import { evaluateJobForTarget, filterJobsForTarget } from "./job-list-filter";
 
 const profile: CandidateProfile = { ...createEmptyCandidateProfile(), currentRole: "Frontend Engineer", primaryTargetRoleTitle: "Frontend Engineer", primaryTargetRoleCategory: "FRONTEND_ENGINEERING", totalYearsExperience: 3 };
 const item = (title: string, roleCategory: string, overrides: Partial<JobListItem> = {}): JobListItem => ({
-  id: title, title, companyName: "Acme", source: "MOCK", roleCategory, regions: ["REMOTE_WORLDWIDE"], freshness: "FRESH", workplaceType: "REMOTE", status: "QUALIFIED_BY_FILTER", postedAt: new Date(), discoveredAt: new Date(), seniority: "UNKNOWN", minimumYearsExperience: null, maximumYearsExperience: null, duplicateSources: 1, frontendClassification: "AMBIGUOUS", ...overrides
+  id: title, title, companyName: "Acme", source: "MOCK",sourceType:"MANUAL",atsProvider:"UNKNOWN", roleCategory, regions: ["REMOTE_WORLDWIDE"], freshness: "TODAY", workplaceType: "REMOTE", status: "QUALIFIED_BY_FILTER", postedAt: new Date(), discoveredAt: new Date(), seniority: "UNKNOWN", minimumYearsExperience: null, maximumYearsExperience: null, duplicateSources: 1, frontendClassification: "AMBIGUOUS", ...overrides
 });
 
 describe("target-scoped job tabs", () => {
@@ -40,5 +40,12 @@ describe("target-scoped job tabs", () => {
   it("marks a five-year requirement borderline and an eight-year requirement ineligible", () => {
     expect(evaluateJobForTarget(item("Frontend Engineer", "FRONTEND_ENGINEERING", { minimumYearsExperience: 5 }), profile).experienceEligible).toBe("BORDERLINE");
     expect(evaluateJobForTarget(item("Frontend Engineer", "FRONTEND_ENGINEERING", { minimumYearsExperience: 8 }), profile)).toMatchObject({ experienceEligible: "INELIGIBLE", status: "REJECTED_EXPERIENCE" });
+  });
+  it("keeps mixed senior titles and senior roles with unknown experience in Needs Classification",()=>{
+    const mixed=item("Senior Java & React Developer","FRONTEND_ENGINEERING",{seniority:"SENIOR",minimumYearsExperience:3});
+    const unknown=item("Senior Frontend Engineer","FRONTEND_ENGINEERING",{seniority:"SENIOR",minimumYearsExperience:null});
+    expect(evaluateJobForTarget(mixed,profile)).toMatchObject({targetRoleEligible:null,status:"NEEDS_CLASSIFICATION"});
+    expect(evaluateJobForTarget(unknown,profile)).toMatchObject({experienceEligible:"UNKNOWN",status:"NEEDS_CLASSIFICATION"});
+    expect(evaluateJobForTarget(item("Senior Frontend Engineer","FRONTEND_ENGINEERING",{seniority:"SENIOR",minimumYearsExperience:3}),profile).status).toBe("QUALIFIED_BY_FILTER");
   });
 });

@@ -7,8 +7,10 @@ import { JobsTargetRole } from "@/components/jobs-target-role";
 import { JobListSkeleton } from "@/components/job-list-skeleton";
 import { DiscoveryControls } from "@/components/discovery-controls";
 import { humanJobStatus, jobTabs, type JobListApiItem, type JobTab } from "@/lib/job-list-filter";
+import { jobSourceDisplayName, type JobSourceProvider } from "@rolevana/job-sources";
 
-type JobsResponse = { items: JobListApiItem[]; total: number; page: number; pageSize: number; totalPages: number; tab: JobTab; error?: string };
+type SourceOption={value:JobSourceProvider;label:string;count:number};
+type JobsResponse = { items: JobListApiItem[]; total: number; page: number; pageSize: number; totalPages: number; tab: JobTab; availableSources:SourceOption[];error?: string };
 const validPageSizes = [25, 50, 100] as const;
 const age = (value: string | null) => { if (!value) return "Unknown"; const hours = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 3_600_000)); return hours < 1 ? "<1h" : hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`; };
 const pagesAround = (page: number, totalPages: number): Array<number | "ellipsis"> => {
@@ -18,32 +20,33 @@ const pagesAround = (page: number, totalPages: number): Array<number | "ellipsis
   return result;
 };
 
-export function JobsExplorer({ initialTitle, initialCategory, initialTab, initialPage, initialPageSize }: { initialTitle: string; initialCategory: string; initialTab: JobTab; initialPage: number; initialPageSize: number }) {
+export function JobsExplorer({ initialTitle, initialCategory, initialTab, initialPage, initialPageSize,initialSource,initialFreshness }: { initialTitle: string; initialCategory: string; initialTab: JobTab; initialPage: number; initialPageSize: number;initialSource:string;initialFreshness:string }) {
   const [targetTitle, setTargetTitle] = useState(initialTitle);
   const [targetCategory, setTargetCategory] = useState(initialCategory);
   const [tab, setTab] = useState<JobTab>(initialTab);
   const [page, setPage] = useState(initialPage);
   const [pageSize, setPageSize] = useState(initialPageSize);
-  const [result, setResult] = useState<JobsResponse>({ items: [], total: 0, page: initialPage, pageSize: initialPageSize, totalPages: 1, tab: initialTab });
+  const[source,setSource]=useState(initialSource);const[freshness,setFreshness]=useState(initialFreshness);
+  const [result, setResult] = useState<JobsResponse>({ items: [], total: 0, page: initialPage, pageSize: initialPageSize, totalPages: 1, tab: initialTab,availableSources:[] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [targetRevision, setTargetRevision] = useState(0);
 
-  const syncUrl = useCallback((nextTab: JobTab, nextPage: number, nextPageSize: number) => {
-    const params = new URLSearchParams(); params.set("tab", nextTab); params.set("page", String(nextPage)); params.set("pageSize", String(nextPageSize));
+  const syncUrl = useCallback((nextTab: JobTab, nextPage: number, nextPageSize: number,nextSource=source,nextFreshness=freshness) => {
+    const params = new URLSearchParams(); params.set("tab", nextTab); params.set("page", String(nextPage)); params.set("pageSize", String(nextPageSize));params.set("source",nextSource);params.set("freshness",nextFreshness);
     window.history.replaceState(null, "", `/jobs?${params.toString()}`);
-  }, []);
+  }, [freshness,source]);
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams({ tab, page: String(page), pageSize: String(pageSize) });
+    const params = new URLSearchParams({ tab, page: String(page), pageSize: String(pageSize),source,freshness });
     void fetch(`/api/jobs?${params.toString()}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
       const body = await response.json() as JobsResponse;
       if (!response.ok) throw new Error(body.error ?? "Could not load jobs.");
       setResult(body); if (body.page !== page) { setLoading(true); setPage(body.page); syncUrl(tab, body.page, pageSize); }
     }).catch((reason) => { if (reason instanceof Error && reason.name !== "AbortError") setError(reason.message); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [page, pageSize, syncUrl, tab, targetRevision]);
+  }, [freshness,page, pageSize, source,syncUrl, tab, targetRevision]);
 
   useEffect(() => {
     const restore = () => {
@@ -52,6 +55,7 @@ export function JobsExplorer({ initialTitle, initialCategory, initialTab, initia
       setTab(jobTabs.includes(requestedTab as JobTab) ? requestedTab as JobTab : "All");
       setPage(Math.max(1, Number(params.get("page") ?? 1) || 1));
       const requestedSize = Number(params.get("pageSize") ?? 25); setPageSize(validPageSizes.includes(requestedSize as 25 | 50 | 100) ? requestedSize : 25);
+      setSource(params.get("source")??"ALL");setFreshness(params.get("freshness")??"ALL");
     };
     window.addEventListener("popstate", restore); return () => window.removeEventListener("popstate", restore);
   }, []);
@@ -62,13 +66,14 @@ export function JobsExplorer({ initialTitle, initialCategory, initialTab, initia
 
   return <>
     <div className="mt-6"><JobsTargetRole initialTitle={targetTitle} initialCategory={targetCategory} onSaved={(title, category) => { setLoading(true); setError(""); setTargetTitle(title); setTargetCategory(category); setPage(1); syncUrl(tab, 1, pageSize); setTargetRevision((value) => value + 1); }}/></div>
+    <div className="mt-4 flex flex-wrap gap-3"><label className="text-xs text-slate-400">Discovery source<select className="control ml-2 w-auto py-2" value={source} onChange={(event)=>{setSource(event.target.value);setPage(1);syncUrl(tab,1,pageSize,event.target.value,freshness);}}><option value="ALL">All Sources</option>{result.availableSources.map((option)=><option value={option.value} key={option.value}>{option.label} ({option.count})</option>)}</select></label><label className="text-xs text-slate-400">Freshness<select className="control ml-2 w-auto py-2" value={freshness} onChange={(event)=>{setFreshness(event.target.value);setPage(1);syncUrl(tab,1,pageSize,source,event.target.value);}}><option value="ALL">All</option><option value="JUST_POSTED">Just Posted</option><option value="VERY_FRESH">Very Fresh</option><option value="TODAY">Today</option><option value="RECENT">Recent</option></select></label></div>
     <div className="my-6 flex gap-1 overflow-x-auto border-b border-white/10" role="tablist" aria-label="Job views">
       {jobTabs.map((name) => <button type="button" className={`shrink-0 border-b-2 bg-transparent px-3 py-3 text-sm transition-colors ${name === tab ? "border-cyan-300 font-semibold text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`} key={name} role="tab" aria-selected={name === tab} onClick={() => navigate(name, 1)}>{name} {name === tab && !loading && <span className="ml-1 text-[10px] text-slate-500">({result.total})</span>}</button>)}
     </div>
     <Card className="overflow-hidden">
       <div className="hidden grid-cols-[1.5fr_.65fr_.75fr_.55fr_.75fr] border-b border-white/[.06] px-5 py-3 text-[10px] font-bold uppercase tracking-[.15em] text-slate-600 md:grid"><span>Role</span><span>Region</span><span>Freshness</span><span>Type</span><span>Status</span></div>
       {loading ? <JobListSkeleton/> : error ? <div role="alert" className="p-10 text-center text-sm text-red-300">{error}</div> : result.items.length ? result.items.map((item) => <Link href={`/jobs/${encodeURIComponent(item.id)}`} className="grid gap-3 border-b border-white/[.06] px-5 py-5 last:border-0 hover:bg-white/[.02] md:grid-cols-[1.5fr_.65fr_.75fr_.55fr_.75fr] md:items-center" key={item.id}>
-        <div><div className="font-semibold">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.company} · {item.source}</div></div>
+        <div><div className="flex items-center gap-2 font-semibold">{item.title}{item.directATS&&<Badge>Direct ATS</Badge>}</div><div className="mt-1 text-xs text-slate-500">{item.company} · {jobSourceDisplayName(item.source)}{item.duplicateSources>1?` · ${item.duplicateSources} sources`:""}</div></div>
         <span className="text-xs text-slate-400">{item.region}</span>
         <span className="text-xs text-slate-400">Posted {age(item.postedAt)} · found {age(item.discoveredAt)}</span>
         <span className="text-xs">{item.workplaceType}<br/><span className="text-slate-500">{item.minimumYearsExperience === null ? item.seniority : `${item.minimumYearsExperience}${item.maximumYearsExperience !== null ? `–${item.maximumYearsExperience}` : "+"} years`}</span></span>
