@@ -1,5 +1,5 @@
 import { findRole, type CandidateProfile } from "@rolevana/domain";
-import { experienceCompatibility, isRegionEligible, roleMatchesTarget, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider, type Seniority, type WorkplaceType } from "@rolevana/job-sources";
+import { experienceCompatibility, hasSeniorityRiskWithoutExperience, isRegionEligible, roleMatchesTarget, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider, type Seniority, type WorkplaceType } from "@rolevana/job-sources";
 import type { JobListItem } from "@/lib/job-store";
 
 export const jobTabs = ["All", "New", "Remote Eligible", "Needs Classification", "Rejected", "Duplicates"] as const;
@@ -11,6 +11,7 @@ export type JobListApiItem = {
   id: string; title: string; company: string; source: JobSourceProvider; roleCategory: string; region: string; freshness: FreshnessBucket;
   workplaceType: WorkplaceType; status: DiscoveryStatus; postedAt: string | null; discoveredAt: string; seniority: Seniority;
   minimumYearsExperience: number | null; maximumYearsExperience: number | null; targetRoleEligible: boolean | null; experienceEligible: ExperienceEligibility;
+  directATS:boolean;duplicateSources:number;
 };
 
 export function targetRelation(item: JobListItem, profile: CandidateProfile): boolean | null {
@@ -26,6 +27,7 @@ export function evaluateJobForTarget(item: JobListItem, profile: CandidateProfil
   let status: DiscoveryStatus;
   if (targetRoleEligible === false) status = "REJECTED_TARGET_ROLE";
   else if (targetRoleEligible === null) status = item.status === "WAITING_FOR_FREE_AI" ? "WAITING_FOR_FREE_AI" : "NEEDS_CLASSIFICATION";
+  else if (hasSeniorityRiskWithoutExperience({seniority:item.seniority,...(item.minimumYearsExperience!==null?{minimumYearsExperience:item.minimumYearsExperience}:{})})) status = "NEEDS_CLASSIFICATION";
   else if (item.workplaceType === "HYBRID" || item.workplaceType === "ONSITE") status = "REJECTED_NOT_REMOTE";
   else if (regionEligible === false) status = "REJECTED_LOCATION";
   else if (experienceEligible === "INELIGIBLE") status = "REJECTED_EXPERIENCE";
@@ -43,15 +45,16 @@ function needsClassification(item: JobListItem, profile: CandidateProfile) {
   return status === "NEEDS_CLASSIFICATION" || status === "WAITING_FOR_FREE_AI";
 }
 
-export function filterJobsForTarget(items: JobListItem[], tab: JobTab, profile: CandidateProfile | null, now = Date.now()): JobListItem[] {
+export function filterJobsForTarget(items: JobListItem[], tab: JobTab, profile: CandidateProfile | null, now = Date.now(),source="ALL",freshness="ALL"): JobListItem[] {
   if (!profile?.primaryTargetRoleTitle) return [];
+  const scoped=items.filter((item)=>(source==="ALL"||item.source===source)&&(freshness==="ALL"||item.freshness===freshness));
   switch (tab) {
-    case "All": return items.filter((item) => targetRelation(item, profile) === true);
-    case "New": return items.filter((item) => targetRelation(item, profile) === true && now - item.discoveredAt.getTime() < 3_600_000);
-    case "Remote Eligible": return items.filter((item) => evaluateJobForTarget(item, profile).status === "QUALIFIED_BY_FILTER");
-    case "Needs Classification": return items.filter((item) => needsClassification(item, profile));
-    case "Rejected": return items.filter((item) => isRejectedMatch(item, profile));
-    case "Duplicates": return items.filter((item) => item.duplicateSources > 1 && targetRelation(item, profile) === true);
+    case "All": return scoped.filter((item) => targetRelation(item, profile) === true);
+    case "New": return scoped.filter((item) => targetRelation(item, profile) === true && now - item.discoveredAt.getTime() < 3_600_000);
+    case "Remote Eligible": return scoped.filter((item) => evaluateJobForTarget(item, profile).status === "QUALIFIED_BY_FILTER");
+    case "Needs Classification": return scoped.filter((item) => needsClassification(item, profile));
+    case "Rejected": return scoped.filter((item) => isRejectedMatch(item, profile));
+    case "Duplicates": return scoped.filter((item) => item.duplicateSources > 1 && targetRelation(item, profile) === true);
   }
 }
 
@@ -63,7 +66,7 @@ export function toJobListApiItem(item: JobListItem, profile: CandidateProfile): 
     region: item.regions.map((region) => regionLabels[region] ?? region).join(", "), freshness: item.freshness, workplaceType: item.workplaceType,
     status: evaluation.status, postedAt: item.postedAt?.toISOString() ?? null, discoveredAt: item.discoveredAt.toISOString(), seniority: item.seniority,
     minimumYearsExperience: item.minimumYearsExperience, maximumYearsExperience: item.maximumYearsExperience,
-    targetRoleEligible: evaluation.targetRoleEligible, experienceEligible: evaluation.experienceEligible
+    targetRoleEligible: evaluation.targetRoleEligible, experienceEligible: evaluation.experienceEligible,directATS:item.sourceType==="DIRECT_ATS",duplicateSources:item.duplicateSources
   };
 }
 

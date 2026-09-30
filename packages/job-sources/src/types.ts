@@ -1,10 +1,17 @@
-export const jobSourceProviders = ["REMOTE_OK", "ASHBY", "GREENHOUSE", "LEVER", "COMPANY_CAREER_PAGE", "MOCK"] as const;
+export const jobSourceProviders = ["REMOTE_OK", "JOBICY", "WE_WORK_REMOTELY", "REMOTIVE", "ASHBY", "GREENHOUSE", "LEVER", "SMARTRECRUITERS", "WORKABLE", "LINKEDIN", "INDEED", "NAUKRI", "WELLFOUND", "ARC", "COMPANY_CAREER_PAGE", "MOCK"] as const;
 export type JobSourceProvider = typeof jobSourceProviders[number];
+export const activeDiscoveryProviders=["REMOTE_OK","JOBICY","WE_WORK_REMOTELY","REMOTIVE","GREENHOUSE","LEVER","ASHBY","SMARTRECRUITERS","WORKABLE"] as const satisfies readonly JobSourceProvider[];
+export const jobSourceDisplayNames:Record<JobSourceProvider,string>={REMOTE_OK:"Remote OK",JOBICY:"Jobicy",WE_WORK_REMOTELY:"We Work Remotely",REMOTIVE:"Remotive",GREENHOUSE:"Greenhouse",LEVER:"Lever",ASHBY:"Ashby",SMARTRECRUITERS:"SmartRecruiters",WORKABLE:"Workable",LINKEDIN:"LinkedIn",INDEED:"Indeed",NAUKRI:"Naukri",WELLFOUND:"Wellfound",ARC:"Arc",COMPANY_CAREER_PAGE:"Company career page",MOCK:"Mock source"};
+export const jobSourceDisplayName=(provider:JobSourceProvider)=>jobSourceDisplayNames[provider];
+export type JobSourceType = "PUBLIC_API" | "RSS" | "DIRECT_ATS" | "PORTAL" | "MANUAL";
+export type ATSProvider = "GREENHOUSE" | "LEVER" | "ASHBY" | "SMARTRECRUITERS" | "WORKABLE" | "GENERIC" | "UNKNOWN";
+export type SourceHealth = "HEALTHY" | "DEGRADED" | "RATE_LIMITED" | "COOLDOWN" | "NOT_CONFIGURED" | "DISABLED" | "FAILED";
+export type TimestampConfidence = "HIGH" | "MEDIUM" | "LOW";
 export type WorkplaceType = "REMOTE" | "HYBRID" | "ONSITE" | "UNKNOWN";
 export type RemoteRegion = "REMOTE_WORLDWIDE" | "REMOTE_INDIA" | "REMOTE_APAC" | "REMOTE_US_ONLY" | "REMOTE_CANADA_ONLY" | "REMOTE_EU_ONLY" | "REMOTE_UK_ONLY" | "REMOTE_LATAM" | "UNKNOWN";
 export type FrontendClassification = "FRONTEND" | "FRONTEND_HEAVY" | "NOT_FRONTEND" | "AMBIGUOUS";
 export type DiscoveryStatus = "DISCOVERED" | "QUALIFIED_BY_FILTER" | "NEEDS_CLASSIFICATION" | "WAITING_FOR_FREE_AI" | "REJECTED_NOT_REMOTE" | "REJECTED_LOCATION" | "REJECTED_ROLE" | "REJECTED_TARGET_ROLE" | "REJECTED_EXPERIENCE" | "DUPLICATE";
-export type FreshnessBucket = "JUST_POSTED" | "VERY_FRESH" | "FRESH" | "RECENT" | "OLDER" | "UNKNOWN";
+export type FreshnessBucket = "JUST_POSTED" | "VERY_FRESH" | "TODAY" | "RECENT" | "OLDER" | "UNKNOWN";
 export type Seniority = "INTERN" | "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "STAFF" | "PRINCIPAL" | "MANAGER" | "UNKNOWN";
 export type ExperienceCompatibility = "COMPATIBLE" | "SLIGHTLY_ABOVE" | "MAJOR_MISMATCH" | "UNKNOWN";
 
@@ -13,14 +20,20 @@ export type NormalizedJob = {
   id?: string;
   externalJobId: string;
   source: JobSourceProvider;
+  sourceType?: JobSourceType;
+  canonicalJobId?: string;
+  sourceJobId?: string;
   sourceRecordId?: string;
   companyName: string;
+  companyDomain?: string;
   companyWebsite?: string;
   title: string;
+  normalizedTitle?: string;
   description: string;
   requirements: string[];
   preferredQualifications: string[];
   employmentType?: string;
+  remoteType?: string;
   workplaceType: WorkplaceType;
   remoteRegions: RemoteRegion[];
   locationRestrictions: string[];
@@ -33,10 +46,17 @@ export type NormalizedJob = {
   team?: string;
   postedAt?: Date;
   updatedAt?: Date;
+  sourcePublishedAt?: Date;
+  sourceUpdatedAt?: Date;
+  firstSeenAt?: Date;
   discoveredAt: Date;
   lastSeenAt: Date;
   jobUrl: string;
+  listingUrl?: string;
   applicationUrl: string;
+  applicationHost?: string;
+  atsProvider?: ATSProvider;
+  atsJobId?: string;
   applicationEmail?: string;
   canonicalUrl: string;
   sourceMetadata: Record<string, unknown>;
@@ -50,6 +70,8 @@ export type NormalizedJob = {
   maximumYearsExperience?: number;
   classificationReason: string;
   freshness: FreshnessBucket;
+  timestampConfidence?: TimestampConfidence;
+  lifecycleStatus?: "ACTIVE" | "POSSIBLY_CLOSED" | "CLOSED";
   sourceReferences: JobSourceReference[];
 };
 
@@ -58,10 +80,27 @@ export type JobTargetPreferences = { selectedRoleTitle: string; roleCategory: st
 export type JobSourceRegistryRecord = {
   id: string;
   provider: JobSourceProvider;
+  sourceType?: JobSourceType;
+  health?: SourceHealth;
   companyName: string;
+  companyDomain?: string;
+  careerUrl?: string;
+  atsType?: ATSProvider;
+  atsIdentifier?: string;
+  discoveredFrom?: "MANUAL" | "AUTO_DETECTED" | "BUILT_IN";
   boardIdentifier: string;
   baseUrl?: string;
   enabled: boolean;
+  lastSyncAt?: string;
+  nextSyncAt?: string;
+  minimumPollIntervalMinutes?: number;
+  cooldownUntil?: string;
+  lastLatencyMs?: number;
+  recordsFetched?: number;
+  newJobs?: number;
+  updatedJobs?: number;
+  duplicates?: number;
+  errors?: number;
   lastSuccessfulScan?: string;
   lastFailedScan?: string;
   lastError?: string;
@@ -74,6 +113,8 @@ export interface JobSourceAdapter<TRaw = unknown> {
   readonly id: string;
   readonly provider: JobSourceProvider;
   readonly companyName: string;
+  readonly sourceType: JobSourceType;
+  readonly minimumPollIntervalMinutes: number;
   searchJobs(since?: Date): Promise<TRaw[]>;
   getJobDetails(externalJobId: string): Promise<TRaw>;
   normalizeJob(raw: TRaw, discoveredAt?: Date): NormalizedJob;
@@ -83,6 +124,10 @@ export interface JobSourceAdapter<TRaw = unknown> {
 export type SourceRunSummary = {
   sourceId: string;
   provider: JobSourceProvider;
+  sourceType?: JobSourceType;
+  health?: SourceHealth;
+  skippedReason?: "NOT_DUE" | "DISABLED" | "COOLDOWN" | "RATE_LIMITED";
+  nextEligibleSync?: string;
   startedAt: string;
   finishedAt: string;
   jobsFetched: number;

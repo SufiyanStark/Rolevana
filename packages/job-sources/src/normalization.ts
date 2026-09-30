@@ -1,12 +1,13 @@
 import { findRole, inferRoleCategory } from "@rolevana/domain";
 import type { ExperienceCompatibility, FreshnessBucket, FrontendClassification, NormalizedJob, RemoteRegion, Seniority, WorkplaceType } from "./types";
 
-const decodeEntities = (value: string) => value
-  .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
-  .replace(/&#(\d+);/g, (_match, code: string) => String.fromCharCode(Number(code)));
+export const decodeHtmlEntities = (value: string) => value
+  .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/(?:&#39;|&apos;)/gi, "'")
+  .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+  .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code,16)));
 
 export function sanitizeJobHtml(value: string): string {
-  return decodeEntities(value)
+  return decodeHtmlEntities(value)
     .replace(/<(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/javascript:/gi, "")
@@ -101,6 +102,8 @@ export function experienceCompatibility(candidateYears: number, minimumYears: nu
 export function roleMatchesTarget(title: string, roleCategory: string, targetTitle: string, targetCategory: string, relatedTitles: string[], includeRelatedTitles: boolean): boolean | null {
   if (!targetTitle) return null;
   const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim();
+  const mixedFrontendDiscipline=targetCategory==="FRONTEND_ENGINEERING"&&/\b(front[ -]?end|react|next\.?js|ui)\b/i.test(title)&&/\b(java|python|\.net|c#|php|ruby|golang|\bgo\b|backend|data|machine learning|devops)\b/i.test(title);
+  if(mixedFrontendDiscipline)return null;
   const targetEntry = findRole(targetTitle);
   const candidates = [targetTitle, ...(targetEntry?.aliases ?? []), ...(includeRelatedTitles ? [...(targetEntry?.relatedTitles ?? []), ...relatedTitles] : [])].map((value) => value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim());
   if (candidates.some((value) => value && normalizedTitle.includes(value))) return true;
@@ -110,6 +113,8 @@ export function roleMatchesTarget(title: string, roleCategory: string, targetTit
   if (roleCategory === targetCategory && roleCategory !== "OTHER") return null;
   return false;
 }
+
+export const hasSeniorityRiskWithoutExperience=(job:Pick<NormalizedJob,"seniority"|"minimumYearsExperience">)=>["SENIOR","LEAD","STAFF","PRINCIPAL","MANAGER"].includes(job.seniority)&&job.minimumYearsExperience===undefined;
 
 export const classifyRoleCategory = (title: string) => inferRoleCategory(title);
 
@@ -132,7 +137,7 @@ export function freshnessBucket(postedAt: Date | undefined, now = new Date()): F
   const hours = (now.getTime() - postedAt.getTime()) / 3_600_000;
   if (hours < 1) return "JUST_POSTED";
   if (hours < 6) return "VERY_FRESH";
-  if (hours < 24) return "FRESH";
+  if (hours < 24) return "TODAY";
   if (hours < 72) return "RECENT";
   return "OLDER";
 }

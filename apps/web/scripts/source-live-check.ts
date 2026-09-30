@@ -1,0 +1,7 @@
+import { AshbyAdapter,GreenhouseAdapter,JobicyAdapter,LeverAdapter,RemoteOKAdapter,RemotiveAdapter,SmartRecruitersAdapter,WeWorkRemotelyAdapter,WorkableAdapter,type JobSourceAdapter } from "@rolevana/job-sources";
+
+async function main(){
+  const sources:JobSourceAdapter[]=[new RemoteOKAdapter(),new JobicyAdapter(),new WeWorkRemotelyAdapter(),new RemotiveAdapter(),new GreenhouseAdapter("Greenhouse","greenhouse"),new LeverAdapter("Lever","lever"),new AshbyAdapter("Ashby","ashby"),new SmartRecruitersAdapter("SmartRecruiters","smartrecruiters"),new WorkableAdapter("Sleek","careers-at-sleek")];
+  for(const source of sources){const started=Date.now();try{const raw=await source.searchJobs();const jobs=raw.map((item)=>source.normalizeJob(item));const target=jobs.filter((job)=>/front[ -]?end|react|ui engineer/i.test(job.title));console.log(JSON.stringify({source:source.id,status:"LIVE_WORKING",httpStatus:200,latencyMs:Date.now()-started,recordsFetched:jobs.length,targetRoleCandidates:target.length,pollIntervalMinutes:source.minimumPollIntervalMinutes,error:null}));}catch(error){console.log(JSON.stringify({source:source.id,status:"BLOCKED",httpStatus:error&&typeof error==="object"&&"status" in error?error.status:0,latencyMs:Date.now()-started,recordsFetched:0,targetRoleCandidates:0,pollIntervalMinutes:source.minimumPollIntervalMinutes,error:error instanceof Error?error.message:"unknown"}));}}
+}
+void main();

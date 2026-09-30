@@ -10,6 +10,7 @@ import { DiscoveryControls } from "@/components/discovery-controls";
 import { evaluateJobForTarget, filterJobsForTarget, humanJobStatus } from "@/lib/job-list-filter";
 import { readBrainSnapshot } from "@/lib/brain-store";
 import { BrainControls } from "@/components/brain-controls";
+import { jobSourceDisplayName } from "@rolevana/job-sources";
 
 const autopilotModes = [
   { id: "discovery", label: "Discovery Only", description: "Find jobs matching your target. No applications.", status: "Available" },
@@ -22,10 +23,10 @@ const pipelineSteps = ["Discover", "Target role filter", "Remote/location filter
 
 export default async function Dashboard() {
   const config = publicRuntimeConfig(process.env); const user = await getSessionUser();
-  const [items, profile, sources, runs, health, brain] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id), readBrainSnapshot(user.id)]) : [[], null, [], [], [], {records:[],activities:[],reviews:[],metrics:{jobsProcessedToday:0,qualifiedToday:0,matchedToday:0,resumeReadyToday:0,applicationReadyToday:0,applicationsSubmittedToday:0,emailsSentToday:0}}];
+  const [items, profile, sources, runs, health, brain] = user ? await Promise.all([readLocalJobSummaries(user.id), readLocalProfile(user.id), readJobSourceRegistry(user.id), readSourceRuns(user.id), readAIProviderHealth(user.id), readBrainSnapshot(user.id)]) : [[], null, [], [], [], {records:[],activities:[],reviews:[],metrics:{jobsProcessedToday:0,qualifiedToday:0,matchedToday:0,resumeReadyToday:0,applicationReadyToday:0,ultraCallsToday:0,ultraAverageLatency:0,ultraTasksAvoidedByDeterministicLogic:0,applicationsSubmittedToday:0,emailsSentToday:0}}];
   const metrics = discoveryMetricsFromSummaries(items); const latestRun = runs[0]; const healthy = sources.filter((source) => source.lastSuccessfulScan && !source.lastError).length; const failing = sources.filter((source) => source.lastError).length;
-  const targetItems = filterJobsForTarget(items, "All", profile); const remoteEligible = filterJobsForTarget(items, "Remote Eligible", profile).length; const needsClassification = filterJobsForTarget(items, "Needs Classification", profile).length;
-  const cards = [["Discovered today",metrics.jobsDiscoveredToday,"Real public listings",Radar],["New in last hour",metrics.newLastHour,"By discovery time",Clock3],["Remote eligible",remoteEligible,"Target role + region",ShieldCheck],["Needs classification",needsClassification,"Never discarded",TriangleAlert]] as const;
+  const targetItems = filterJobsForTarget(items, "All", profile); const remoteEligible = filterJobsForTarget(items, "Remote Eligible", profile).length;
+  const cards = [["Discovered today",metrics.jobsDiscoveredToday,`${sources.filter((item)=>item.enabled).length} sources enabled`,Radar],["Just posted",metrics.justPosted,`${metrics.veryFresh} very fresh`,Clock3],["Remote eligible",remoteEligible,"Target role + region",ShieldCheck],["Company ATS boards",sources.filter((item)=>item.sourceType==="DIRECT_ATS").length,"Direct-source coverage",TriangleAlert]] as const;
 
   return <div className="space-y-7">
     <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
@@ -97,7 +98,7 @@ export default async function Dashboard() {
           <Button asChild variant="ghost" size="sm"><Link href="/jobs">View all <ArrowUpRight size={14}/></Link></Button>
         </div>
         {targetItems.slice(0,6).map((item)=><Link className="block border-b border-white/[.05] px-5 py-4 last:border-0 hover:bg-white/[.02]" href={`/jobs/${item.id}`} key={item.id}>
-          <div className="flex items-center justify-between gap-4"><div><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.companyName} · {item.source} · {item.regions.join(", ")}</div></div><Badge>{profile ? humanJobStatus(evaluateJobForTarget(item, profile).status, evaluateJobForTarget(item, profile).experienceEligible) : "Discovered"}</Badge></div>
+          <div className="flex items-center justify-between gap-4"><div><div className="font-medium">{item.title}</div><div className="mt-1 text-xs text-slate-500">{item.companyName} · {jobSourceDisplayName(item.source)} · {item.regions.join(", ")}</div></div><Badge>{profile ? humanJobStatus(evaluateJobForTarget(item, profile).status, evaluateJobForTarget(item, profile).experienceEligible) : "Discovered"}</Badge></div>
         </Link>)}
         {!targetItems.length&&<div className="p-8 text-center text-sm text-slate-500">No matching {profile?.primaryTargetRoleTitle ?? "target-role"} jobs found in your current sources.</div>}
       </Card>

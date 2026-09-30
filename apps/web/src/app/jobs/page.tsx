@@ -4,7 +4,7 @@ import { DiscoveryControls } from "@/components/discovery-controls";
 import { JobsExplorer } from "@/components/jobs-explorer";
 import { jobTabs, type JobTab } from "@/lib/job-list-filter";
 
-export default async function JobsPage({ searchParams }: { searchParams: Promise<{ tab?: string; page?: string; pageSize?: string }> }) {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<{ tab?: string; page?: string; pageSize?: string; source?: string; freshness?: string }> }) {
   const user = await getSessionUser();
   const profile = user ? await readLocalProfile(user.id) : null;
   const params = await searchParams;
@@ -21,9 +21,9 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           {profile?.primaryTargetRoleTitle ? <>{profile.totalYearsExperience}y experience · {profile.allowedRegions.join(", ")}</> : "Import or complete your profile to initialize a target role."}
         </p>
       </div>
-      <DiscoveryControls/>
+      <DiscoveryControls />
     </div>
 
-    <JobsExplorer initialTitle={profile?.primaryTargetRoleTitle ?? ""} initialCategory={profile?.primaryTargetRoleCategory ?? "OTHER"} initialTab={tab} initialPage={page} initialPageSize={pageSize}/>
+    <JobsExplorer initialTitle={profile?.primaryTargetRoleTitle ?? ""} initialCategory={profile?.primaryTargetRoleCategory ?? "OTHER"} initialTab={tab} initialPage={page} initialPageSize={pageSize} initialSource={params.source ?? "ALL"} initialFreshness={params.freshness ?? "ALL"} />
   </div>;
 }
