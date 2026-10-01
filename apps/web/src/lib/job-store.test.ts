@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { phaseOneMockJobs } from "@rolevana/job-sources";
-import { readJobSourceRegistry, readLocalJobs, registerDetectedCompanySources, upsertLocalJobs } from "./job-store";
+import { readJobSourceRegistry, readLocalJobs, reclassifyLocalJobs, registerDetectedCompanySources, upsertLocalJobs } from "./job-store";
 
 describe.sequential("job discovery local store", () => {
   let directory = ""; const userId = "local-development-user";
@@ -29,5 +29,19 @@ describe.sequential("job discovery local store", () => {
     const sources=await readJobSourceRegistry(userId);
     expect(sources).toEqual(expect.arrayContaining([expect.objectContaining({provider:"ASHBY",boardIdentifier:"example-company",discoveredFrom:"AUTO_DETECTED"})]));
     expect(await registerDetectedCompanySources(userId,[job])).toBe(0);
+  });
+  it("hydrates persisted encoding and unknown zero salary safely", async () => {
+    await upsertLocalJobs(userId, [{ ...phaseOneMockJobs[0]!, description: "RoleÂ — build React", salaryMin: 0, salaryMax: 0 }]);
+    const stored = (await readLocalJobs(userId))[0]!;
+    expect(stored.description).toBe("Role — build React"); expect(stored.salaryMin).toBeUndefined(); expect(stored.salaryMax).toBeUndefined();
+  });
+  it("reclassifies local jobs without invoking discovery", async () => {
+    await upsertLocalJobs(userId, [
+      { ...phaseOneMockJobs[0]!, id: "backend", title: "Sr. Software Engineer (Backend)", status: "NEEDS_CLASSIFICATION" },
+      { ...phaseOneMockJobs[1]!, id: "platform", title: "Senior Software Engineer, Platform", status: "NEEDS_CLASSIFICATION", seniority: "SENIOR" },
+    ]);
+    const result = await reclassifyLocalJobs(userId, ["India", "Worldwide", "APAC"], { selectedRoleTitle: "Frontend Engineer", roleCategory: "FRONTEND_ENGINEERING", relatedTitles: ["React Engineer"], includeRelatedTitles: true, candidateYearsExperience: 3, experienceToleranceYears: 1 });
+    expect(result.jobs.find((item) => item.id === "backend")).toMatchObject({ status: "REJECTED_TARGET_ROLE", classificationReason: expect.stringContaining("TARGET_ROLE_MISMATCH") });
+    expect(result.jobs.find((item) => item.id === "platform")?.status).toBe("NEEDS_CLASSIFICATION");
   });
 });

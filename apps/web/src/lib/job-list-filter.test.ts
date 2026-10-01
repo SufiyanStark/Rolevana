@@ -25,6 +25,12 @@ describe("target-scoped job tabs", () => {
     expect(filterJobsForTarget(jobs, "Needs Classification", profile).map((job) => job.title)).toEqual(["Software Engineer"]);
     expect(filterJobsForTarget(jobs, "Rejected", profile).map((job) => job.title)).toEqual(["Product Manager", "Data Annotator"]);
   });
+  it("rejects explicit competing disciplines while leaving generic platform work ambiguous", () => {
+    expect(evaluateJobForTarget(item("Sr. Software Engineer (Backend)", "SOFTWARE_ENGINEERING"), profile).status).toBe("REJECTED_TARGET_ROLE");
+    expect(evaluateJobForTarget(item("Senior Software Engineer - Infrastructure Security", "SECURITY"), profile).status).toBe("REJECTED_TARGET_ROLE");
+    expect(evaluateJobForTarget(item("Senior Software Engineer, Platform", "SOFTWARE_ENGINEERING"), profile).status).toBe("NEEDS_CLASSIFICATION");
+  });
+  it("keeps deterministic non-remote rejection ahead of role ambiguity", () => expect(evaluateJobForTarget(item("Senior .NET Software Engineer", "SOFTWARE_ENGINEERING", { workplaceType: "HYBRID" }), profile).status).toBe("REJECTED_NOT_REMOTE"));
 
   it("re-evaluates the same stored jobs when the target changes", () => {
     const qaProfile = { ...profile, primaryTargetRoleTitle: "QA Engineer", primaryTargetRoleCategory: "QA_SDET" as const, targetRoleSelectionSource: "USER" as const };

@@ -25,10 +25,10 @@ export function evaluateJobForTarget(item: JobListItem, profile: CandidateProfil
   const compatibility = experienceCompatibility(profile.totalYearsExperience, item.minimumYearsExperience ?? undefined, profile.experienceToleranceYears);
   const experienceEligible: ExperienceEligibility = compatibility === "COMPATIBLE" ? "ELIGIBLE" : compatibility === "SLIGHTLY_ABOVE" ? "BORDERLINE" : compatibility === "MAJOR_MISMATCH" ? "INELIGIBLE" : "UNKNOWN";
   let status: DiscoveryStatus;
-  if (targetRoleEligible === false) status = "REJECTED_TARGET_ROLE";
+  if (item.workplaceType === "HYBRID" || item.workplaceType === "ONSITE") status = "REJECTED_NOT_REMOTE";
+  else if (targetRoleEligible === false) status = "REJECTED_TARGET_ROLE";
   else if (targetRoleEligible === null) status = item.status === "WAITING_FOR_FREE_AI" ? "WAITING_FOR_FREE_AI" : "NEEDS_CLASSIFICATION";
   else if (hasSeniorityRiskWithoutExperience({seniority:item.seniority,...(item.minimumYearsExperience!==null?{minimumYearsExperience:item.minimumYearsExperience}:{})})) status = "NEEDS_CLASSIFICATION";
-  else if (item.workplaceType === "HYBRID" || item.workplaceType === "ONSITE") status = "REJECTED_NOT_REMOTE";
   else if (regionEligible === false) status = "REJECTED_LOCATION";
   else if (experienceEligible === "INELIGIBLE") status = "REJECTED_EXPERIENCE";
   else if (item.workplaceType === "UNKNOWN" || regionEligible === null) status = "NEEDS_CLASSIFICATION";

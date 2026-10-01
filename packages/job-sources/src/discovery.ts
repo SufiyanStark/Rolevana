@@ -7,8 +7,8 @@ export function sourcePollingDecision(source:Pick<JobSourceRegistryRecord,"enabl
 export function filterDiscoveredJob(job: NormalizedJob, allowedRegions: string[], target?: JobTargetPreferences): NormalizedJob {
   if (job.workplaceType === "HYBRID" || job.workplaceType === "ONSITE") return { ...job, status: "REJECTED_NOT_REMOTE", classificationReason: `${job.workplaceType} jobs are blocked by the remote-only preference.` };
   if (target) {
-    const roleMatch = roleMatchesTarget(job.title, job.roleCategory, target.selectedRoleTitle, target.roleCategory, target.relatedTitles, target.includeRelatedTitles);
-    if (roleMatch === false) return { ...job, status: "REJECTED_TARGET_ROLE", classificationReason: `The role does not match the selected ${target.selectedRoleTitle} target.` };
+    const roleMatch = roleMatchesTarget(job.title, job.roleCategory, target.selectedRoleTitle, target.roleCategory, target.relatedTitles, target.includeRelatedTitles, job.description);
+    if (roleMatch === false) return { ...job, status: "REJECTED_TARGET_ROLE", classificationReason: `TARGET_ROLE_MISMATCH: the role does not match the selected ${target.selectedRoleTitle} target.` };
     if (roleMatch === null) return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "The mixed or broad job title is an ambiguous target match and requires classification." };
     if (hasSeniorityRiskWithoutExperience(job)) return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "SENIORITY_RISK: the seniority title has no reliable explicit experience requirement (EXPERIENCE_UNKNOWN)." };
     if (job.workplaceType === "UNKNOWN") return { ...job, status: "NEEDS_CLASSIFICATION", classificationReason: "The target role matches, but workplace type is genuinely unknown." };
