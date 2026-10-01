@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getLocalDataDirectory } from "./local-store";
-import { classifyRoleCategory, decodeHtmlEntities, detectATS, extractExperienceRequirement, normalizeRemoteRegions, parseSupportedBoardUrl, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider,type JobSourceType, type JobSourceRegistryRecord, type NormalizedJob, type RemoteRegion, type Seniority, type SourceRunSummary, type WorkplaceType } from "@rolevana/job-sources";
+import { classifyRoleCategory, detectATS, extractExperienceRequirement, filterDiscoveredJob, normalizeJobTextEncoding, normalizeRemoteRegions, normalizeSalaryBounds, parseSupportedBoardUrl, type DiscoveryStatus, type FreshnessBucket, type JobSourceProvider,type JobSourceType, type JobSourceRegistryRecord, type JobTargetPreferences, type NormalizedJob, type RemoteRegion, type Seniority, type SourceRunSummary, type WorkplaceType } from "@rolevana/job-sources";
 import type { AIJobClassification, AIProviderHealth } from "@rolevana/ai";
 
 const safeUserId = (userId: string) => userId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -71,13 +71,14 @@ type SerializedJob = Omit<NormalizedJob, "postedAt" | "updatedAt" | "sourcePubli
 };
 
 const hydrateJob = (raw: SerializedJob): NormalizedJob => {
-  const { postedAt, updatedAt,sourcePublishedAt,sourceUpdatedAt,firstSeenAt, discoveredAt, lastSeenAt, ...rest } = raw;
-  const title=decodeHtmlEntities(rest.title).trim();const companyName=decodeHtmlEntities(rest.companyName).trim();
-  const experience = extractExperienceRequirement(title, rest.description);
+  const { postedAt, updatedAt,sourcePublishedAt,sourceUpdatedAt,firstSeenAt, discoveredAt, lastSeenAt, salaryMin, salaryMax, ...rest } = raw;
+  const title=normalizeJobTextEncoding(rest.title);const companyName=normalizeJobTextEncoding(rest.companyName);const description=normalizeJobTextEncoding(rest.description);
+  const explicitZero=rest.sourceMetadata?.salaryExplicitZero===true;const salary=normalizeSalaryBounds({salaryMin,salaryMax,salaryCurrency:rest.salaryCurrency,salaryInterval:rest.salaryInterval,explicitZero});
+  const experience = extractExperienceRequirement(title, description);
   const invalidStoredExperience = rest.maximumYearsExperience !== undefined && (rest.maximumYearsExperience > 30 || (rest.minimumYearsExperience !== undefined && rest.minimumYearsExperience > rest.maximumYearsExperience));
   return {
     ...rest,
-    title,companyName,
+    title,companyName,description,...(salary.salaryMin===undefined?{}:{salaryMin:salary.salaryMin}),...(salary.salaryMax===undefined?{}:{salaryMax:salary.salaryMax}),
     timestampConfidence:sourcePublishedAt?(rest.timestampConfidence??"HIGH"):postedAt?"MEDIUM":"LOW",
     ...(invalidStoredExperience ? { minimumYearsExperience: experience.minimumYearsExperience, maximumYearsExperience: experience.maximumYearsExperience } : {}),
     remoteRegions: rest.remoteRegions.includes("UNKNOWN") ? normalizeRemoteRegions(rest.locations.join(" "), rest.locationRestrictions.join(" ")) : rest.remoteRegions,
@@ -104,6 +105,7 @@ type SerializedJobIndex = { version: 4; items: SerializedJobListItem[] };
 const jobListItem = (job: NormalizedJob): JobListItem => ({ id: job.id ?? job.descriptionHash, title: job.title, companyName: job.companyName, source: job.source,sourceType:job.sourceType,atsProvider:job.atsProvider, roleCategory: job.roleCategory ?? classifyRoleCategory(job.title), regions: job.remoteRegions, freshness: job.freshness, workplaceType: job.workplaceType, status: job.status, postedAt: job.postedAt ?? null, discoveredAt: job.discoveredAt, seniority: job.seniority ?? extractExperienceRequirement(job.title, job.description).seniority, minimumYearsExperience: job.minimumYearsExperience ?? null, maximumYearsExperience: job.maximumYearsExperience ?? null, duplicateSources: job.sourceReferences.length, frontendClassification: job.frontendClassification });
 const serializedJobListItem = (job: JobListItem): SerializedJobListItem => ({ ...job, postedAt: job.postedAt?.toISOString() ?? null, discoveredAt: job.discoveredAt.toISOString() });
 const saveJobIndex = (userId: string, jobs: NormalizedJob[]) => writeJson(jobsIndexFile(userId), { version: 4, items: jobs.map(jobListItem).map(serializedJobListItem) } satisfies SerializedJobIndex);
+const persistLocalJobs = (userId: string, jobs: NormalizedJob[]) => Promise.all([writeJson(jobsFile(userId), jobs), saveJobIndex(userId, jobs), ...jobs.map((job) => writeJson(jobDetailFile(userId, job.id ?? job.descriptionHash), job))]);
 
 export async function readLocalJobSummaries(userId: string): Promise<JobListItem[]> {
   const index = await readJson<SerializedJobIndex | SerializedJobListItem[]>(jobsIndexFile(userId), []);
@@ -144,8 +146,16 @@ export async function upsertLocalJobs(userId: string, incoming: NormalizedJob[])
     existing[index] = { ...preferred, id: current.id ?? randomUUID(), discoveredAt: current.discoveredAt,firstSeenAt:current.firstSeenAt??current.discoveredAt, lastSeenAt: candidate.lastSeenAt, sourceReferences: references };
     if(importantChanged){updated += 1;stats.updated+=1;}else{unchanged+=1;stats.unchanged+=1;}
   }
-  await Promise.all([writeJson(jobsFile(userId), existing), saveJobIndex(userId, existing), ...existing.map((job) => writeJson(jobDetailFile(userId, job.id ?? job.descriptionHash), job))]);
+  await persistLocalJobs(userId, existing);
   return { jobs: existing, created, updated,unchanged, duplicates,createdJobIds,bySource };
+}
+
+export async function reclassifyLocalJobs(userId: string, allowedRegions: string[], target: JobTargetPreferences) {
+  const jobs = await readLocalJobs(userId); const before = Object.fromEntries([...new Set(jobs.map((job) => job.status))].map((status) => [status, jobs.filter((job) => job.status === status).length]));
+  const updated = jobs.map((job) => filterDiscoveredJob(job, allowedRegions, target));
+  await persistLocalJobs(userId, updated);
+  const after = Object.fromEntries([...new Set(updated.map((job) => job.status))].map((status) => [status, updated.filter((job) => job.status === status).length]));
+  return { jobs: updated, before, after, changed: updated.filter((job, index) => job.status !== jobs[index]?.status || job.classificationReason !== jobs[index]?.classificationReason).length };
 }
 
 export async function saveSourceRuns(userId: string, runs: SourceRunSummary[]) {

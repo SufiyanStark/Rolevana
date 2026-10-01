@@ -6,8 +6,36 @@ export const decodeHtmlEntities = (value: string) => value
   .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
   .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code,16)));
 
+/** Repairs common UTF-8/Windows-1252 whitespace and punctuation mojibake without interpreting HTML. */
+export const normalizeJobTextEncoding = (value: string) => decodeHtmlEntities(value)
+  .replace(/Â(?:\u00a0|\s)/g, " ")
+  .replace(/\u00a0/g, " ")
+  .replace(/â/g, "’").replace(/â/g, "‘")
+  .replace(/â/g, "“").replace(/â/g, "”")
+  .replace(/â/g, "—").replace(/â/g, "–")
+  .replace(/â¢/g, "•")
+  .replace(/[ \t]+\n/g, "\n")
+  .replace(/\n[ \t]+/g, "\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim();
+
+export type SalaryDisplayInput = { salaryMin?: number | undefined; salaryMax?: number | undefined; salaryCurrency?: string | undefined; salaryInterval?: string | undefined; explicitZero?: boolean | undefined };
+export const normalizeSalaryBounds = <T extends SalaryDisplayInput>(salary: T): T => {
+  if (!salary.explicitZero && (salary.salaryMin ?? 0) === 0 && (salary.salaryMax ?? 0) === 0) {
+    const next = { ...salary }; delete next.salaryMin; delete next.salaryMax; return next;
+  }
+  return salary;
+};
+export function formatSalary(salary: SalaryDisplayInput): string {
+  const normalized = normalizeSalaryBounds(salary); const minimum = normalized.salaryMin; const maximum = normalized.salaryMax;
+  if (minimum === undefined && maximum === undefined) return "Not specified";
+  const currency = normalized.salaryCurrency?.trim() || "Currency not specified"; const interval = normalized.salaryInterval?.trim();
+  const amount = minimum !== undefined && maximum !== undefined ? `${minimum}–${maximum}` : minimum !== undefined ? `From ${minimum}` : `Up to ${maximum}`;
+  return [currency, amount, interval].filter(Boolean).join(" ");
+}
+
 export function sanitizeJobHtml(value: string): string {
-  return decodeHtmlEntities(value)
+  return normalizeJobTextEncoding(value)
     .replace(/<(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/javascript:/gi, "")
@@ -99,9 +127,17 @@ export function experienceCompatibility(candidateYears: number, minimumYears: nu
   return "MAJOR_MISMATCH";
 }
 
-export function roleMatchesTarget(title: string, roleCategory: string, targetTitle: string, targetCategory: string, relatedTitles: string[], includeRelatedTitles: boolean): boolean | null {
+export function roleMatchesTarget(title: string, roleCategory: string, targetTitle: string, targetCategory: string, relatedTitles: string[], includeRelatedTitles: boolean, description = ""): boolean | null {
   if (!targetTitle) return null;
   const normalizedTitle = title.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").trim();
+  if (targetCategory === "FRONTEND_ENGINEERING") {
+    const explicitCompetingDiscipline = /\b(?:back[ -]?end|infrastructure security|devops|site reliability|sre|data engineer|machine learning engineer|ml engineer|security engineer|qa engineer|quality assurance|sdet)\b/i.test(title);
+    if (explicitCompetingDiscipline) {
+      const frontendTitle = /\b(?:front[ -]?end|react|next\.?js|ui engineer|ui developer)\b/i.test(title);
+      const frontendEvidence = (description.match(/\b(?:react|typescript|javascript|next\.js|front[ -]?end|redux|browser|accessibility)\b/gi) ?? []).length;
+      return frontendTitle || frontendEvidence >= 6 ? null : false;
+    }
+  }
   const mixedFrontendDiscipline=targetCategory==="FRONTEND_ENGINEERING"&&/\b(front[ -]?end|react|next\.?js|ui)\b/i.test(title)&&/\b(java|python|\.net|c#|php|ruby|golang|\bgo\b|backend|data|machine learning|devops)\b/i.test(title);
   if(mixedFrontendDiscipline)return null;
   const targetEntry = findRole(targetTitle);

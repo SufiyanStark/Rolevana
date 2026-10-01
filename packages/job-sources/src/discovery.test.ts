@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AshbyAdapter,detectATS,freshnessBucket,GreenhouseAdapter,JobDiscoveryService, JobicyAdapter,LeverAdapter,MockJobSourceAdapter, NonOverlappingDiscoveryScheduler,parseJobRss,RemoteOKAdapter,RemotiveAdapter,SmartRecruitersAdapter,sourcePollingDecision,SourceHttpClient, classifyFrontendRole, deduplicateJobs, extractExperienceRequirement, filterDiscoveredJob, isRegionEligible, normalizeRemoteRegions, normalizeWorkplaceType, parseSupportedBoardUrl, phaseOneMockJobs, sanitizeJobHtml,WeWorkRemotelyAdapter,WorkableAdapter, type JobSourceAdapter, type JobTargetPreferences, type NormalizedJob } from "./index";
+import { AshbyAdapter,detectATS,formatSalary,freshnessBucket,GreenhouseAdapter,JobDiscoveryService, JobicyAdapter,LeverAdapter,MockJobSourceAdapter, NonOverlappingDiscoveryScheduler,normalizeJobTextEncoding,parseJobRss,RemoteOKAdapter,RemotiveAdapter,SmartRecruitersAdapter,sourcePollingDecision,SourceHttpClient, classifyFrontendRole, deduplicateJobs, extractExperienceRequirement, filterDiscoveredJob, isRegionEligible, normalizeRemoteRegions, normalizeWorkplaceType, parseSupportedBoardUrl, phaseOneMockJobs, sanitizeJobHtml,WeWorkRemotelyAdapter,WorkableAdapter, type JobSourceAdapter, type JobTargetPreferences, type NormalizedJob } from "./index";
 import { sourceFixtures } from "./fixtures/sources";
 
 const job = (overrides: Partial<NormalizedJob> = {}): NormalizedJob => ({ ...phaseOneMockJobs[0]!, ...overrides, sourceReferences: overrides.sourceReferences ?? phaseOneMockJobs[0]!.sourceReferences });
@@ -30,13 +30,18 @@ describe("deterministic job discovery", () => {
   it("keeps a known target role with unknown geography out of the AI-wait state", () => {
     expect(filterDiscoveredJob(job({ title: "Frontend Engineer", roleCategory: "FRONTEND_ENGINEERING", workplaceType: "REMOTE", remoteRegions: ["UNKNOWN"] }), ["India", "Worldwide", "APAC"], frontendTarget).status).toBe("NEEDS_CLASSIFICATION");
   });
+  it.each(["Sr. Software Engineer (Backend)", "Senior Software Engineer - Infrastructure Security"])("rejects the explicit competing discipline %s", (title) => {
+    expect(filterDiscoveredJob(job({ title, roleCategory: "SOFTWARE_ENGINEERING", workplaceType: "REMOTE", remoteRegions: ["REMOTE_WORLDWIDE"] }), ["India", "Worldwide", "APAC"], frontendTarget)).toMatchObject({ status: "REJECTED_TARGET_ROLE", classificationReason: expect.stringContaining("TARGET_ROLE_MISMATCH") });
+  });
+  it("keeps a generic platform software title ambiguous", () => expect(filterDiscoveredJob(job({ title: "Senior Software Engineer, Platform", roleCategory: "SOFTWARE_ENGINEERING", seniority: "SENIOR", workplaceType: "REMOTE", remoteRegions: ["REMOTE_WORLDWIDE"] }), ["India", "Worldwide", "APAC"], frontendTarget).status).toBe("NEEDS_CLASSIFICATION"));
   it("routes a mixed senior React title to classification instead of qualifying on an embedded alias",()=>{
     const result=filterDiscoveredJob(job({title:"Senior Java & React Developer",roleCategory:"FRONTEND_ENGINEERING",seniority:"SENIOR",minimumYearsExperience:3,workplaceType:"REMOTE",remoteRegions:["REMOTE_WORLDWIDE"]}),["India","Worldwide","APAC"],frontendTarget);
     expect(result).toMatchObject({status:"NEEDS_CLASSIFICATION"});
     expect(result.classificationReason).toContain("ambiguous target match");
   });
   it("requires classification for seniority without explicit experience but accepts an explicit three-year senior frontend role",()=>{
-    expect(filterDiscoveredJob(job({title:"Senior Frontend Engineer",roleCategory:"FRONTEND_ENGINEERING",seniority:"SENIOR",minimumYearsExperience:undefined,workplaceType:"REMOTE",remoteRegions:["REMOTE_WORLDWIDE"]}),["India","Worldwide","APAC"],frontendTarget)).toMatchObject({status:"NEEDS_CLASSIFICATION",classificationReason:expect.stringContaining("SENIORITY_RISK")});
+    const candidate=job({title:"Senior Frontend Engineer",roleCategory:"FRONTEND_ENGINEERING",seniority:"SENIOR",workplaceType:"REMOTE",remoteRegions:["REMOTE_WORLDWIDE"]});delete candidate.minimumYearsExperience;
+    expect(filterDiscoveredJob(candidate,["India","Worldwide","APAC"],frontendTarget)).toMatchObject({status:"NEEDS_CLASSIFICATION",classificationReason:expect.stringContaining("SENIORITY_RISK")});
     expect(filterDiscoveredJob(job({title:"Senior Frontend Engineer",roleCategory:"FRONTEND_ENGINEERING",seniority:"SENIOR",minimumYearsExperience:3,workplaceType:"REMOTE",remoteRegions:["REMOTE_WORLDWIDE"]}),["India","Worldwide","APAC"],frontendTarget).status).toBe("QUALIFIED_BY_FILTER");
   });
   it("extracts common deterministic experience requirements", () => {
@@ -48,6 +53,12 @@ describe("deterministic job discovery", () => {
   it("sanitizes executable job HTML while preserving meaningful text", () => {
     const value = sanitizeJobHtml('<h2>Role</h2><script>alert(1)</script><ul><li onclick="bad()">React</li></ul>');
     expect(value).toContain("Role"); expect(value).toContain("React"); expect(value).not.toMatch(/script|onclick|alert/);
+  });
+  it("repairs common encoding artifacts and formats partial or unknown salary without fabrication", () => {
+    expect(normalizeJobTextEncoding("RoleÂ â React")).toBe("Role — React");
+    expect(formatSalary({ salaryMin: 0, salaryMax: 0 })).toBe("Not specified");
+    expect(formatSalary({ salaryMin: 50000, salaryCurrency: "USD" })).toBe("USD From 50000");
+    expect(formatSalary({ salaryMax: 90000 })).toBe("Currency not specified Up to 90000");
   });
   it("deduplicates cross-source references into one canonical job", () => {
     const first = job();
